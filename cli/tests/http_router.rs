@@ -8,11 +8,11 @@
 //! test passing.
 //!
 //! A test verifier stands in for the bridge, so these drive
-//! [`serve::build_router`] with `tower::ServiceExt::oneshot`: no socket, no
+//! [`http::build_router`] with `tower::ServiceExt::oneshot`: no socket, no
 //! bridge, no port.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -20,7 +20,7 @@ use http_body_util::BodyExt as _;
 use sapphire_framework::keys::{AuthConfig, Authenticated, GrainId, Verdict, Verifier};
 use tower::ServiceExt as _;
 
-use sapphire_ledger_server::serve;
+use sapphire_ledger::http;
 
 /// The one token the test verifier accepts.
 const TOKEN: &str = "sapphire-ed-test";
@@ -67,13 +67,14 @@ impl Fixture {
     }
 
     fn router_with(&self, auth: AuthConfig) -> axum::Router {
-        serve::build_router(
+        let state = sapphire_ledger_core::LedgerState::open(&self.ledger).expect("open");
+        let state = Arc::new(Mutex::new(state));
+        http::build_router(
             auth,
-            &self.ledger,
+            Arc::new(move || Ok(Arc::clone(&state))),
             &[],
             tokio_util::sync::CancellationToken::new(),
         )
-        .expect("router")
     }
 
     fn router(&self) -> axum::Router {

@@ -115,16 +115,33 @@ pub fn price_relative_path(date: NaiveDate, id: &str) -> PathBuf {
 }
 
 /// Create a new sapphire-ledger workspace at `target`. Creates the directory
-/// if missing. Errors if `.sapphire-ledger/` already exists there.
+/// if missing. Errors if `target` already holds a ledger.
+///
+/// A `.sapphire-ledger/` the framework made first (`sapphire-ledger workspace
+/// init`, which writes only its own `[workspace.*]` tables into
+/// `config.toml`) is not a ledger yet: the ledger's settings are added beside
+/// what the framework wrote, and the record directories are created.
 pub fn init_workspace(target: &Path, base_currency: &str) -> Result<()> {
     fs::create_dir_all(target)?;
     let workspace_dir = target.join(WORKSPACE_DIR);
-    if workspace_dir.exists() {
+    let config_path = workspace_dir.join(CONFIG_FILE);
+
+    // What a marker someone else made already holds, kept as-is.
+    let mut document = match fs::read_to_string(&config_path) {
+        Ok(text) => text
+            .parse::<toml::Table>()
+            .map_err(|e| Error::Validation(format!("{}: {e}", config_path.display())))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
+        Err(e) => return Err(e.into()),
+    };
+    if document.contains_key("schema_version") || (workspace_dir.exists() && !config_path.exists())
+    {
         return Err(Error::Validation(format!(
             "{} already contains a sapphire-ledger workspace",
             target.display()
         )));
     }
+
     fs::create_dir_all(&workspace_dir)?;
     fs::create_dir_all(target.join(TRANSACTIONS_DIR))?;
     fs::create_dir_all(target.join(ACCOUNTS_DIR))?;
@@ -136,11 +153,15 @@ pub fn init_workspace(target: &Path, base_currency: &str) -> Result<()> {
         base_currency: base_currency.to_string(),
         cache: CacheConfig::default(),
     };
-    fs::write(
-        workspace_dir.join(CONFIG_FILE),
-        toml::to_string_pretty(&config)?,
-    )?;
-    fs::write(workspace_dir.join(".gitignore"), format!("{CACHE_FILE}\n"))?;
+    let toml::Value::Table(ours) = toml::Value::try_from(&config)? else {
+        unreachable!("a struct serializes to a table");
+    };
+    document.extend(ours);
+    fs::write(&config_path, toml::to_string_pretty(&document)?)?;
+    let gitignore = workspace_dir.join(".gitignore");
+    if !gitignore.exists() {
+        fs::write(gitignore, format!("{CACHE_FILE}\n"))?;
+    }
 
     Ok(())
 }
