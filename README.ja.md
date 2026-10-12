@@ -17,17 +17,16 @@ sapphire-framework上に構築された、ローカルファーストの複式�
 
 ```
 sapphire-ledger/
-├── cli/                     # CLIバイナリ（sapphire-ledger）。stdio MCPサーバー同梱
+├── cli/                     # 単一バイナリ sapphire-ledger：CLI、stdio MCP、アプリサーバー（HTTP経由の/mcp、同期）
 ├── desktop/                 # デスクトップGUI（egui）。まだスキャフォールド
-├── server/                  # HTTP経由のセルフホストMCPサーバー。デバイス毎の認証（/rpc同期は未実装）
 └── crates/
     ├── sapphire-ledger-core/  # データモデル、TOMLパーサ/シリアライザ、検証、書き込みパス
-    └── sapphire-ledger-mcp/   # MCPサーバーロジック（ライブラリ。CLIとserver/が組み込んで使用）
+    └── sapphire-ledger-mcp/   # MCPサーバーロジック（ライブラリ。stdio と HTTP のトランスポート）
 ```
 
 ## ステータス
 
-データモデル、検証、書き込みパス、MCPサーバーは動作します。MCPクライアントを`sapphire-ledger mcp`に向けてstdio経由でエントリの読み書き・記録をしたり、`sapphire-ledger-server`インスタンスの`/mcp`に向けてHTTP経由で同じことができます（デバイス毎の認証付き。CLIと認証モデルは[`docs/design.md`](docs/design.md#mcp-server)参照）。`/rpc`同期は未実装なので、エージェントが書いた内容の修正はstillワークスペースのファイルを持つマシンで行う必要があります — このプロジェクトが存在意義とするレビューループはまだ閉じていません。デスクトップGUIはまだスキャフォールドですが、CLIは書き込みに対応しました：
+データモデル、検証、書き込みパス、MCPサーバーは動作します。配布物は単一バイナリ`sapphire-ledger`で、ledger独自のコマンドと、[sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)のアプリサーバー用コマンド（`serve`、`status`、`service`、`workspace`、`workgroup`、`device`、`external-device`など）が同じ階層に並びます。MCPクライアントを`sapphire-ledger mcp`に向けてstdio経由でエントリの読み書き・記録をしたり、サーバー（`sapphire-ledger serve`、または引数なしの`sapphire-ledger`）を起動して、その`/mcp`にHTTP経由・外部デバイスのトークンで同じことができます（セットアップと認証モデルは[`docs/design.md`](docs/design.md#mcp-server)参照）。デスクトップGUIはまだスキャフォールドですが、CLIは書き込みに対応しました：
 
 ```
 sapphire-ledger account add Expenses:Food --type Expense
@@ -46,8 +45,7 @@ sapphire-ledger tx list --account Expenses:Food
 |-----------|---------|
 | `sapphire-ledger-core` | MIT OR Apache-2.0 |
 | `sapphire-ledger-mcp` | MIT OR Apache-2.0 |
-| `sapphire-ledger-cli` | MIT OR Apache-2.0 |
+| `sapphire-ledger`（`cli/`） | MIT OR Apache-2.0 |
 | `sapphire-ledger-desktop` | MIT OR Apache-2.0 |
-| `sapphire-ledger-server` | MIT OR Apache-2.0 |
 
 各コンポーネントのディレクトリにある`LICENSE-MIT` / `LICENSE-APACHE`ファイルに完全なライセンス文書があります。

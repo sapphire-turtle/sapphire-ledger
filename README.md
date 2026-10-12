@@ -17,24 +17,25 @@ A double-entry household ledger built on [sapphire-framework](https://github.com
 
 ```
 sapphire-ledger/
-├── cli/                     # CLI binary (sapphire-ledger) with stdio MCP server bundled
+├── cli/                     # the one binary, sapphire-ledger: CLI, stdio MCP, and the app server (/mcp over HTTP, sync)
 ├── desktop/                 # Desktop GUI (egui); still a scaffold
-├── server/                  # self-hosted MCP server over HTTP, authenticated per device (no /rpc sync yet)
 └── crates/
     ├── sapphire-ledger-core/  # Data model, TOML parser/serializer, validation, write path
-    └── sapphire-ledger-mcp/   # MCP server logic (library, used by the CLI and by server/)
+    └── sapphire-ledger-mcp/   # MCP server logic (library, stdio and HTTP transports)
 ```
 
 ## Status
 
-The data model, validation, write path and MCP server work. You can point an
-MCP client at `sapphire-ledger mcp` and have it read and record entries over
-stdio, or at a `sapphire-ledger-server` instance's `/mcp` and do the same over
-HTTP, authenticated per device (see [`docs/design.md`](docs/design.md#mcp-server)
-for the CLI and the auth model). `/rpc` sync is not built, so a correction to
-what an agent wrote still has to happen on the machine holding the
-workspace's files — the review loop the project exists for is not yet
-closed. The desktop GUI is still a scaffold, but the CLI can now write:
+The data model, validation, write path and MCP server work. Everything ships
+as one binary, `sapphire-ledger`: the ledger's own verbs, and the
+[sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)
+app-server verbs beside them (`serve`, `status`, `service`, `workspace`,
+`workgroup`, `device`, `external-device`, …). You can point an MCP client at
+`sapphire-ledger mcp` and have it read and record entries over stdio, or run
+the server (`sapphire-ledger serve`, or a bare `sapphire-ledger`) and reach
+its `/mcp` over HTTP with an external-device token (see
+[`docs/design.md`](docs/design.md#mcp-server) for the setup and the auth
+model). The desktop GUI is still a scaffold, but the CLI can now write:
 
 ```
 sapphire-ledger account add Expenses:Food --type Expense
@@ -54,8 +55,7 @@ This repository contains components under different licenses:
 |-----------|---------|
 | `sapphire-ledger-core` | MIT OR Apache-2.0 |
 | `sapphire-ledger-mcp` | MIT OR Apache-2.0 |
-| `sapphire-ledger-cli` | MIT OR Apache-2.0 |
+| `sapphire-ledger` (`cli/`) | MIT OR Apache-2.0 |
 | `sapphire-ledger-desktop` | MIT OR Apache-2.0 |
-| `sapphire-ledger-server` | MIT OR Apache-2.0 |
 
 See the `LICENSE-MIT` / `LICENSE-APACHE` files in each component's directory for the full license text.

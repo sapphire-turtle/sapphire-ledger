@@ -2,6 +2,13 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+pub use sapphire_framework::server::FrameworkCommand;
+
+/// The command line of the one binary this app ships.
+///
+/// The ledger's own verbs and the framework's sit side by side at the top
+/// level. A bare invocation parses to `command: None`, which is the
+/// framework's default verb, `serve` — what the service manager starts.
 #[derive(Parser)]
 #[command(
     name = "sapphire-ledger",
@@ -12,11 +19,15 @@ pub struct Cli {
     /// Path to the ledger root (the directory containing `.sapphire-ledger/`).
     /// Overrides the automatic upward search from the current directory.
     /// Can also be set via the SAPPHIRE_LEDGER_DIR environment variable.
+    ///
+    /// Read by the ledger's own verbs only: `serve` serves the workspace the
+    /// server has selected (`workspace select`).
     #[arg(long, env = "SAPPHIRE_LEDGER_DIR", global = true, value_name = "DIR")]
     pub ledger_dir: Option<PathBuf>,
 
+    /// Omit to run the server.
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -49,6 +60,10 @@ pub enum Command {
     /// Record observed exchange rates.
     #[command(subcommand)]
     Price(PriceCommand),
+    /// The framework's verbs: serve, status, service, workspace, workgroup,
+    /// device, embedding, external-device.
+    #[command(flatten)]
+    Framework(FrameworkCommand),
 }
 
 #[derive(Subcommand)]

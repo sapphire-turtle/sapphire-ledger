@@ -37,21 +37,16 @@ pub use workspace::{
 pub static LEDGER_CTX: sapphire_workspace::AppContext =
     sapphire_workspace::AppContext::new("sapphire-ledger");
 
-/// Point [`LEDGER_CTX`] at this machine's cache and data directories.
+pub use sapphire_workspace::AppKind;
+
+/// Point [`LEDGER_CTX`] at this machine's cache, data and config directories.
 ///
 /// `AppContext::cache_dir()` panics if this has not run, so every binary that
-/// touches the context calls this first. Mirrors `sapphire-journal-core`'s
-/// `init_app_context`. Idempotent: `AppContext`'s setters are first-writer-wins,
-/// so calling it twice is harmless and calling it from a test is fine.
-pub fn init_app_context() {
-    let cache = dirs::cache_dir()
-        .unwrap_or_else(|| std::env::temp_dir().join(".cache"))
-        .join("sapphire-ledger");
-    let data = dirs::data_dir()
-        .unwrap_or_else(|| std::env::temp_dir().join(".local").join("share"))
-        .join("sapphire-ledger");
-    let _ = std::fs::create_dir_all(&cache);
-    let _ = std::fs::create_dir_all(&data);
-    LEDGER_CTX.set_cache_dir(cache);
-    LEDGER_CTX.set_data_dir(data);
+/// touches the context calls this first. The framework resolves the
+/// directories (honouring `SAPPHIRE_LEDGER_{CACHE,DATA,CONFIG}_DIR`) and
+/// installs its console log subscriber, which prints to **stdout** — a process
+/// whose stdout is a protocol (stdio MCP) must install its own subscriber
+/// first, or not call this at all. Idempotent: first writer wins.
+pub fn init_app_context(kind: AppKind) {
+    LEDGER_CTX.init(kind);
 }
