@@ -1,107 +1,83 @@
-//! The composition this branch exists to add: `/mcp`, and only `/mcp`,
-//! behind the framework's key check.
+//! The composition this server exists for: `/mcp`, and only `/mcp`, behind
+//! the framework's token check.
 //!
-//! `protect`'s own semantics are the framework's to test, and they are
-//! tested there. What no test in this repository covered until now is the
-//! wiring: that `build_state` still calls `.with_keys(...)`, that nobody has
-//! reached for `ServerState::insecure_for_tests()`, and that `/rpc` has not
-//! quietly become reachable. Each of those is a one-line mistake that leaves
-//! every other test on this branch passing.
+//! `protect`'s own semantics, and the bridge's answers, are the framework's to
+//! test. What these pin is the wiring: that `build_router` applies `protect`
+//! at all, that an accepted token reaches the MCP service, and that nothing
+//! but `/mcp` is mounted. Each is a one-line mistake that leaves every other
+//! test passing.
 //!
-//! These drive [`serve::build_router`] directly with
-//! `tower::ServiceExt::oneshot` rather than binding a socket, so there is no
-//! port to pick and no server to shut down.
+//! A test verifier stands in for the bridge, so these drive
+//! [`serve::build_router`] with `tower::ServiceExt::oneshot`: no socket, no
+//! bridge, no port.
 
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt as _;
+use sapphire_framework::keys::{AuthConfig, Authenticated, GrainId, Verdict, Verifier};
 use tower::ServiceExt as _;
 
-use sapphire_ledger_server::cli::{Command, DeviceCommand, UserCommand};
-use sapphire_ledger_server::{identity, serve};
+use sapphire_ledger_server::serve;
 
-/// Keep this test binary's cache out of the real user cache directory.
-///
-/// `set_cache_dir` is first-writer-wins on a process global and these tests
-/// share a process, so the `OnceLock` is what makes them agree rather than
-/// race.
-fn init_test_cache() {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("cache tempdir"));
-    sapphire_ledger_core::LEDGER_CTX.set_cache_dir(dir.path().to_path_buf());
+/// The one token the test verifier accepts.
+const TOKEN: &str = "sapphire-ed-test";
+
+/// Accepts [`TOKEN`] and refuses everything else, the way the bridge answers
+/// for an external device allowed to use this app.
+struct OneToken;
+
+#[async_trait::async_trait]
+impl Verifier for OneToken {
+    async fn verify(&self, token: &str) -> Verdict {
+        if token == TOKEN {
+            Verdict::Accepted(Authenticated {
+                id: GrainId::from_u64_lossy(1),
+                name: "laptop".to_owned(),
+            })
+        } else {
+            Verdict::Refused
+        }
+    }
+}
+
+/// A bridge that cannot be asked.
+struct Down;
+
+#[async_trait::async_trait]
+impl Verifier for Down {
+    async fn verify(&self, _token: &str) -> Verdict {
+        Verdict::Unavailable
+    }
 }
 
 struct Fixture {
     _dir: tempfile::TempDir,
     ledger: PathBuf,
-    keys: PathBuf,
 }
 
 impl Fixture {
     fn new() -> Self {
-        init_test_cache();
         let dir = tempfile::tempdir().expect("tempdir");
         let ledger = dir.path().join("ledger");
         sapphire_ledger_core::init_workspace(&ledger, "JPY").expect("init");
-        let keys = dir.path().join("keys.toml");
-        Self {
-            _dir: dir,
-            ledger,
-            keys,
-        }
+        Self { _dir: dir, ledger }
     }
 
-    fn ledger_dir(&self) -> &Path {
-        &self.ledger
-    }
-
-    /// Mint a token the way an operator does, through `device add` -- not by
-    /// calling `KeyStore::generate` directly. If the CLI ever stops setting a
-    /// device id, or stops writing to this file, these tests should feel it.
-    fn mint_token(&self, device: &str) -> String {
-        identity::run(
-            Command::User(UserCommand::Add {
-                name: "me".to_string(),
-                description: None,
-            }),
-            &self.ledger,
-            &self.keys,
-        )
-        .expect("user add");
-        identity::run(
-            Command::Device(DeviceCommand::Add {
-                name: device.to_string(),
-                user: "me".to_string(),
-                description: None,
-                expires_in: None,
-            }),
-            &self.ledger,
-            &self.keys,
-        )
-        .expect("device add");
-
-        let store = sapphire_framework::remote_server::KeyStore::load(&self.keys).expect("keys");
-        store
-            .entries()
-            .iter()
-            .find(|k| k.label.as_deref() == Some(device))
-            .expect("device add minted a key")
-            .token
-            .clone()
-    }
-
-    fn router(&self) -> axum::Router {
-        let state = serve::build_state(&self.keys).expect("state");
+    fn router_with(&self, auth: AuthConfig) -> axum::Router {
         serve::build_router(
-            state,
-            self.ledger_dir(),
+            auth,
+            &self.ledger,
             &[],
             tokio_util::sync::CancellationToken::new(),
         )
         .expect("router")
+    }
+
+    fn router(&self) -> axum::Router {
+        self.router_with(AuthConfig::new(Arc::new(OneToken)))
     }
 }
 
@@ -129,82 +105,70 @@ async fn mcp_without_a_bearer_is_refused() {
         status(f.router(), "/mcp", None).await,
         StatusCode::UNAUTHORIZED,
         "an unauthenticated /mcp request must not reach the ledger -- this is \
-         the assertion that catches `protect` being dropped from `build_router`, \
-         `build_state` losing `.with_keys(..)`, or someone reaching for \
-         `ServerState::insecure_for_tests()`"
+         the assertion that catches `protect` being dropped from `build_router`"
     );
 }
 
 #[tokio::test]
 async fn mcp_with_a_bogus_bearer_is_refused() {
     let f = Fixture::new();
-    let _real = f.mint_token("laptop");
     assert_eq!(
-        status(f.router(), "/mcp", Some("sl_not_a_real_token")).await,
+        status(f.router(), "/mcp", Some("sapphire-ed-not-a-real-token")).await,
         StatusCode::UNAUTHORIZED,
-        "a token that names no key must be refused even when the store holds \
-         a valid one"
+        "a token the verifier refuses must be refused"
     );
 }
 
 #[tokio::test]
-async fn mcp_with_a_minted_bearer_gets_past_the_key_check() {
+async fn mcp_with_an_accepted_bearer_gets_past_the_check() {
     let f = Fixture::new();
-    let token = f.mint_token("laptop");
-    let status = status(f.router(), "/mcp", Some(&token)).await;
+    let status = status(f.router(), "/mcp", Some(TOKEN)).await;
     // What rmcp answers a bare GET is rmcp's business -- it may be 405, 406
-    // or a stream. The claim here is only that the key check let it through,
+    // or a stream. The claim here is only that the check let it through,
     // which is what makes the 401s above evidence of authentication rather
     // than of a router that refuses everything.
-    assert_ne!(
-        status,
-        StatusCode::UNAUTHORIZED,
-        "a token minted by `device add` must authenticate"
-    );
-    assert_ne!(
-        status,
-        StatusCode::SERVICE_UNAVAILABLE,
-        "503 is `protect`'s no-key-store-configured refusal; the state built \
-         here does have one"
-    );
+    assert_ne!(status, StatusCode::UNAUTHORIZED);
+    assert_ne!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[tokio::test]
-async fn rpc_is_not_mounted() {
+async fn only_mcp_is_mounted() {
     let f = Fixture::new();
-    let token = f.mint_token("laptop");
     // Authenticated on purpose: `protect` layers the whole router, so an
-    // unauthenticated /rpc would 401 before routing and tell us nothing about
-    // whether the route exists.
+    // unauthenticated request would 401 before routing and tell us nothing
+    // about whether the route exists.
     assert_eq!(
-        status(f.router(), "/rpc", Some(&token)).await,
-        StatusCode::NOT_FOUND,
-        "`/rpc` is deliberately absent -- the framework's `router()` must not \
-         be merged while sync has no client. When sync lands, this should \
-         become a real route test rather than being deleted."
+        status(f.router(), "/rpc", Some(TOKEN)).await,
+        StatusCode::NOT_FOUND
     );
 }
 
 #[tokio::test]
-async fn a_state_with_no_key_store_refuses_everything() {
-    // The complement of the tests above: `build_state` always attaches a key
-    // store, and if it ever stopped, `protect` would close rather than open.
-    // Asserting that here means a regression shows up as a 503 rather than as
-    // a silently unauthenticated `/mcp`.
+async fn a_bridge_that_cannot_be_asked_is_503() {
     let f = Fixture::new();
-    let state = Arc::new(sapphire_framework::remote_server::ServerState::new(
-        f.ledger_dir().to_path_buf(),
-    ));
-    let router = serve::build_router(
-        state,
-        f.ledger_dir(),
-        &[],
-        tokio_util::sync::CancellationToken::new(),
-    )
-    .expect("router");
     assert_eq!(
-        status(router, "/mcp", None).await,
+        status(
+            f.router_with(AuthConfig::new(Arc::new(Down))),
+            "/mcp",
+            Some(TOKEN)
+        )
+        .await,
         StatusCode::SERVICE_UNAVAILABLE,
-        "no key store configured must close the router, never open it"
+        "with the bridge down the token may be fine: 503, never 401 or through"
+    );
+}
+
+#[tokio::test]
+async fn no_verifier_closes_the_router() {
+    let f = Fixture::new();
+    assert_eq!(
+        status(
+            f.router_with(AuthConfig::unconfigured()),
+            "/mcp",
+            Some(TOKEN)
+        )
+        .await,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "authentication that is not wired must close the router, never open it"
     );
 }

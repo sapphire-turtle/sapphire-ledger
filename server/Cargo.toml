@@ -20,19 +20,17 @@ redb-store = ["sapphire-ledger-core/redb-store", "sapphire-ledger-mcp/redb-store
 [dependencies]
 sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
 sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false, features = ["http-server"] }
-sapphire-framework = { workspace = true, features = ["workspace", "remote-server", "registry"] }
+sapphire-framework = { workspace = true, features = ["workspace", "keys"] }
 axum.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "time"] }
 tokio-util.workspace = true
 clap.workspace = true
 anyhow.workspace = true
-chrono.workspace = true
 serde.workspace = true
-humantime.workspace = true
 tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
+async-trait = "0.1"
 tempfile.workspace = true
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

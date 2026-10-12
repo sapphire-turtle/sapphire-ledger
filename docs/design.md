@@ -438,21 +438,20 @@ already is).
 
 **Built.** `sapphire-ledger-server` is a self-hosted binary that composes
 `sapphire-ledger-mcp`'s `http-server` feature (`mcp_router`) with the
-framework's `remote-server` and `registry` features, and serves `/mcp` behind
-`protect()`. The full reasoning behind every decision below lives in
+framework's `keys` feature, and serves `/mcp` behind `protect()`. The
+original reasoning lives in
 [`docs/superpowers/specs/2026-09-02-ledger-server-design.md`](superpowers/specs/2026-09-02-ledger-server-design.md);
-this section covers what a reader needs so as not to be surprised.
+its key-file and user/device sections were superseded by sapphire-framework
+0.15's external devices, described below.
 
-**`/rpc` is deliberately not mounted.** The `remote-server` feature is taken
-for `KeyStore` and `protect` — authentication — not for sync: the framework's
-`router()` (the `/rpc` routes) is never merged into this server's
-`axum::Router`. `/rpc` has no client today (the desktop crate is a scaffold,
-the CLI has no sync client), so there is nothing to test a sync server
-against yet. Adding it later is a `.merge()` against the same `ServerState`;
-nothing here has to be undone. Concretely, this means **the review loop the
-project exists for is not yet closed**: an agent can read and write over
-`/mcp`, but a human still has to be on the machine holding the workspace's
-files to review or correct what it wrote.
+**Only `/mcp` is mounted.** Sync is no longer an HTTP route: since
+sapphire-framework 0.15 it runs between app servers through the host's
+`sapphire-bridge`, and this server does not take part in it yet (see
+issue #19, which folds this binary into `sapphire-ledger` as the framework's
+app server). Concretely, this means **the review loop the project exists for
+is not yet closed**: an agent can read and write over `/mcp`, but a human
+still has to be on the machine holding the workspace's files to review or
+correct what it wrote.
 
 **The `Host` allowlist is a parameter, not a default.** rmcp refuses any
 request whose `Host` header isn't on an allowlist, and its own default is
@@ -473,38 +472,16 @@ proxy that terminates TLS, or reach it over a network that is already
 encrypted (a WireGuard or Tailscale interface, say), rather than exposing
 `--addr` directly.
 
-**Clients are devices, and every device belongs to a user.** A bearer key
-authenticates a device; it is not itself the unit of identity — the
-framework's registry (`Devices` / `Users`) supplies that, the same way
-`sapphire-agent` already manages its clients. There is no standalone key
-command: `device add` registers a device and mints its key in the same act,
-because a key naming no device is a key nobody can attribute. Retirement
-tombstones a device rather than deleting it, so a `device_id` already written
-into a record still resolves to a name afterward.
-
-**Rotation and retirement are not live.** A running server authenticates
-against a snapshot of the key file taken at start-up — `ServerState` has no
-reload path — so `device rotate` and `device retire` only take effect when
-the server is restarted, and until then it keeps accepting the old token.
-`device rotate`, `device retire` and `device list` all say so on stderr, and
-if you are retiring a device because it was compromised, restarting the
-server is the step that actually cuts its access.
-
-Two files, two homes:
-
-- **`.sapphire-ledger/devices.toml` and `users.toml` live in the workspace.**
-  They're content — who the devices and people are — and once `/rpc` exists
-  they sync, which is what lets a `device_id` written on one machine resolve
-  on another.
-- **`keys.toml` lives in this app's host-local cache directory**, not the
-  workspace. It holds secrets; a token that synced would be a token on every
-  machine that ever pulled. It sits in that ledger's *own* subdirectory of
-  the cache (`{cache}/{path_uuid}/keys.toml`), not the cache root, so a
-  personal and a business ledger on one host do not share a credential —
-  `protect()` only checks that a bearer names a key, never that the key's
-  `device_id` belongs to the workspace being served, so a shared key file
-  would let a device registered under one ledger authenticate in full
-  against the other. Pass `--keys` to put it somewhere else.
+**Clients are the workgroup's external devices.** A bearer token belongs to
+an external device in the workgroup's ledger (`external_devices/<id>.toml`,
+synced by the bridge), which lists the applications it may use. The ledger
+keeps only the token's SHA-256; the token itself is shown once, by
+`external-device add` or `rotate`. `/mcp` asks the bridge about every
+presented token through the framework's `BridgeVerifier`, which caches a
+success for 30 seconds — so a `retire` or `rotate` takes effect within that
+long, with no restart. A refused token is 401; with the bridge not running
+every request is 503, because the token may well be fine. This server holds
+no key file and no user registry of its own.
 
 **Duplicate ids are reported, never resolved.** A background watch re-walks
 the workspace once at startup and then every five minutes, and logs any id
@@ -521,44 +498,23 @@ CLI:
 
 ```
 sapphire-ledger-server --ledger-dir DIR              # serve
-sapphire-ledger-server init [--base-currency CCY]
-sapphire-ledger-server user add <name>
-sapphire-ledger-server user list
-sapphire-ledger-server device add <name> --user <selector>
-sapphire-ledger-server device list
-sapphire-ledger-server device rotate <selector>
-sapphire-ledger-server device retire <selector>
+sapphire-ledger-server --ledger-dir DIR init [--base-currency CCY]
 ```
 
-`--ledger-dir` (or `SAPPHIRE_LEDGER_SERVER_DIR`) is required for every one of
-these, not only `serve`: the user/device registry lives under the ledger
-root, so `identity::run` needs it to resolve the workspace before it can add,
-list, rotate or retire anything. For `init` it names the directory to create.
-
-`init` does the same job as `sapphire-ledger init`, offered here so that
-setting up a server does not need a second binary. It stops at the workspace —
-the registry and the first token come from `user add` and `device add`, which
-already own that concern — and prints those two commands on its way out. A
-first-time setup is therefore:
+`--ledger-dir` (or `SAPPHIRE_LEDGER_SERVER_DIR`) is required: it is the
+ledger `/mcp` serves, and for `init` the directory to create. `init` does the
+same job as `sapphire-ledger init`, offered here so that setting up a server
+does not need a second binary. A first-time setup is therefore:
 
 ```
 sapphire-ledger-server --ledger-dir ~/ledger init
-sapphire-ledger-server --ledger-dir ~/ledger user add me
-sapphire-ledger-server --ledger-dir ~/ledger device add laptop --user me   # token to stdout, once
+sapphire-bridge external-device add laptop --app sapphire-ledger   # token to stdout, once
 sapphire-ledger-server --ledger-dir ~/ledger
 ```
 
-Note the ordering constraint `init` introduces: the key file's location is
-derived from the *canonicalized* ledger root, and canonicalization fails on a
-directory that does not exist yet. `main` therefore resolves the key path per
-command rather than once up front, so that `init` never asks for it — asking
-before the directory exists would name one location during setup and a
-different one for every command afterwards.
-
-`last_updated_by` is not implemented. `Authenticated` carries an optional
-`device_id`, and every key this server's CLI mints sets one — that is the
-hook the field will use once it exists, but no record schema has the field
-yet.
+`last_updated_by` is not implemented. `Authenticated` carries the external
+device's id and name — that is the hook the field will use once it exists,
+but no record schema has the field yet.
 
 ### Library API shape
 

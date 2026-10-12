@@ -1,66 +1,27 @@
 //! Building and running the HTTP server.
 
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use sapphire_framework::remote_server::{KeyStore, ServerState, protect};
+use sapphire_framework::keys::{AuthConfig, BridgeVerifier, protect};
 use tokio_util::sync::CancellationToken;
 
-/// Where the key file goes when `--keys` is not given: this app's cache
-/// directory, **not** the workspace — and within it, the subdirectory
-/// belonging to *this* ledger rather than the cache root.
+/// The authentication `/mcp` sits behind: the workgroup's external devices,
+/// asked of the bridge.
 ///
-/// Two axes, and both matter:
-///
-/// **Cache, not workspace.** The workspace is what syncs once `/rpc` exists,
-/// and a token that syncs is a token on every machine that ever pulled. The
-/// device and user tables are the opposite case and do live in the workspace
-/// — they are content, and a device id is only resolvable elsewhere if they
-/// travel.
-///
-/// **Per workspace, not per host.** `cache_dir_for` gives
-/// `{cache}/{path_uuid}/`, so a personal ledger and a business ledger on one
-/// machine get separate key files. Sharing one would mean a device
-/// registered under the first authenticates in full against the second,
-/// because `protect()` checks that a bearer names *a* key — it never
-/// cross-checks that key's `device_id` against the served workspace's
-/// `devices.toml`. That would also break `last_updated_by` before it is
-/// written: the field holds a `device_id` and its resolution is supposed to
-/// complete inside this application, which it cannot if a record carries an
-/// id no local `devices.toml` knows. `sapphire-journal-server` splits the
-/// same way, for the same reason.
-///
-/// `LEDGER_CTX` panics if read before `sapphire_ledger_core::init_app_context`
-/// has run — this function assumes the caller already did that (`main` does,
-/// as its first statement). A path helper that quietly initialised global
-/// state on the side would be a surprise to its next caller and would leave
-/// `LEDGER_CTX`'s data directory still unset for whoever reads that instead.
-pub fn default_keys_path(ledger_dir: &Path) -> anyhow::Result<PathBuf> {
-    let cache = sapphire_ledger_core::LEDGER_CTX.cache_dir_for(ledger_dir);
-    std::fs::create_dir_all(&cache)
-        .with_context(|| format!("failed to create {}", cache.display()))?;
-    Ok(cache.join("keys.toml"))
-}
-
-/// Build the server state. Only the key store is configured: no resolver and
-/// no workspace store, because `/rpc` is not mounted.
-///
-/// `data_dir` is where the framework would keep per-workspace sync state. It
-/// is required by the constructor and unused here, so it is set to the key
-/// file's own directory -- not necessarily the cache directory: with
-/// `--keys` pointing elsewhere, it isn't. Harmless while nothing writes it.
-pub fn build_state(keys_path: &Path) -> anyhow::Result<Arc<ServerState>> {
-    let store = KeyStore::load(keys_path)
-        .with_context(|| format!("failed to open the key file {}", keys_path.display()))?;
-    let data_dir = keys_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    Ok(Arc::new(
-        ServerState::new(data_dir).with_keys(Arc::new(store)),
-    ))
+/// A client presents a token minted by `external-device add` (on this binary
+/// once it carries the framework's commands, or on `sapphire-bridge`), and the
+/// bridge says whether it belongs to an external device allowed to use this
+/// app. Nothing here holds a key: the ledger keeps only a hash, on the bridge's
+/// side. With the bridge down every request is 503, not 401 — the client's
+/// token may be fine.
+pub fn bridge_auth() -> AuthConfig {
+    AuthConfig::new(Arc::new(BridgeVerifier::new(
+        sapphire_ledger_core::LEDGER_CTX.app_name,
+        env!("CARGO_PKG_VERSION"),
+    )))
 }
 
 /// Refuse a configuration that would serve 403 to every client.
@@ -94,15 +55,10 @@ pub fn check_exposure(addr: SocketAddr, allowed_hosts: &[String]) -> anyhow::Res
 /// Split out of [`run`] so the composition is testable. [`run`] binds a
 /// socket, which a test cannot drive; everything above the socket -- that
 /// `protect` is actually applied, that a valid bearer gets through, that
-/// `/rpc` is not mounted -- is the part worth pinning, and a `Router` can be
-/// called directly with `tower::ServiceExt::oneshot`.
-///
-/// **`/rpc` is deliberately absent.** The framework's `router()` is never
-/// merged here: `remote-server` is taken for `KeyStore` and `protect`, not
-/// for sync, and sync has no client yet. Mounting it later is a `.merge()`
-/// against this same `ServerState`.
+/// nothing but `/mcp` is mounted -- is the part worth pinning, and a `Router`
+/// can be called directly with `tower::ServiceExt::oneshot`.
 pub fn build_router(
-    state: Arc<ServerState>,
+    auth: AuthConfig,
     ledger_dir: &Path,
     allowed_hosts: &[String],
     cancel: CancellationToken,
@@ -110,38 +66,19 @@ pub fn build_router(
     let ledger_state = sapphire_ledger_mcp::server::prepare_state(Some(ledger_dir), false)?;
     let shared = Arc::new(std::sync::Mutex::new(ledger_state));
     let mcp = sapphire_ledger_mcp::http::mcp_router(shared, cancel, None, allowed_hosts);
-    Ok(protect(state, mcp))
+    Ok(protect(auth, mcp))
 }
 
 /// Serve until Ctrl-C or SIGTERM, then drain.
 pub async fn run(
     addr: SocketAddr,
     ledger_dir: &Path,
-    state: Arc<ServerState>,
     allowed_hosts: &[String],
 ) -> anyhow::Result<()> {
     check_exposure(addr, allowed_hosts)?;
 
-    // `build_state` always attaches a key store, so `protect` installs its
-    // authenticating layer rather than its refusing one -- with zero usable
-    // keys, every request just 401s from here on, silently. Unlike the wide
-    // bind `check_exposure` refuses above, an empty key store is a
-    // legitimate transient state while someone is setting up, so this only
-    // warns instead of refusing to start.
-    if !state.keys().is_some_and(|keys| keys.has_usable_key()) {
-        tracing::warn!(
-            "no usable API key configured -- every request will be refused until \
-             the key file names at least one unexpired key"
-        );
-    }
-
     let cancel = CancellationToken::new();
-    let app = build_router(
-        Arc::clone(&state),
-        ledger_dir,
-        allowed_hosts,
-        cancel.clone(),
-    )?;
+    let app = build_router(bridge_auth(), ledger_dir, allowed_hosts, cancel.clone())?;
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await

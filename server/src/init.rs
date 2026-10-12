@@ -2,8 +2,8 @@
 //!
 //! The same job `sapphire-ledger init` does, offered here so that setting up a
 //! server does not require a second binary. It creates the workspace and stops:
-//! the registry and the first device's token come from `user add` and
-//! `device add`, which already exist and already own that concern.
+//! a client's token comes from the workgroup's external devices, which the
+//! bridge owns.
 
 use std::path::Path;
 
@@ -14,10 +14,7 @@ use anyhow::Context as _;
 /// Refuses a directory that is already a workspace — that check lives in
 /// `sapphire_ledger_core::init_workspace`, and the error it returns says so.
 ///
-/// Everything printed here goes to **stderr**. `stdout` in this binary carries
-/// the raw token from `device add` and `device rotate` and nothing else, and a
-/// command that starts a setup whose next step prints a secret should not be
-/// the one that muddies the stream.
+/// Everything printed here goes to **stderr**, beside the log.
 pub fn run(root: &Path, base_currency: &str) -> anyhow::Result<()> {
     sapphire_ledger_core::init_workspace(root, base_currency)
         .with_context(|| format!("failed to initialize a ledger at {}", root.display()))?;
@@ -27,17 +24,9 @@ pub fn run(root: &Path, base_currency: &str) -> anyhow::Result<()> {
         root.display()
     );
     eprintln!();
-    eprintln!("Next, register who the clients belong to and mint one a token:");
-    eprintln!(
-        "  sapphire-ledger-server --ledger-dir {} user add <your name>",
-        root.display()
-    );
-    eprintln!(
-        "  sapphire-ledger-server --ledger-dir {} device add <device name> --user <your name>",
-        root.display()
-    );
-    eprintln!();
-    eprintln!("`device add` prints the token to stdout, once. It is not recoverable afterwards.");
+    eprintln!("Next, give a client a token (the bridge must be running):");
+    eprintln!("  sapphire-bridge external-device add <name> --app sapphire-ledger");
+    eprintln!("The token is printed once. It is not recoverable afterwards.");
 
     Ok(())
 }
