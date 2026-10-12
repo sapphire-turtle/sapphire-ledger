@@ -3,9 +3,8 @@
 //!
 //! A ledger record's path embeds mutable data: a transaction's or
 //! assertion's path is derived from its *date*, an account's from its
-//! *name*. The sync model that will land in `/rpc` resolves conflicts per
-//! path, last-writer-wins, on a client-supplied wall clock, with deletes as
-//! tombstones under the same comparison. A client that was offline across a
+//! *name*. Sync resolves conflicts per path, last-writer-wins, with deletes
+//! as tombstones under the same comparison. A client that was offline across a
 //! rename or a date correction can push to the old path with a later
 //! timestamp; the tombstone loses, and the record now exists at two paths
 //! under one id.
@@ -164,14 +163,18 @@ fn display_relative(root: &Path, path: &Path) -> String {
 /// Spawn the background watch: run [`duplicate_report`] immediately, then
 /// again every [`CHECK_INTERVAL`], logging each line it produces at `WARN`.
 ///
+/// `root` is asked on every pass, so the watch follows the server's current
+/// workspace; a pass with no workspace selected does nothing.
+///
 /// Only duplicates are logged here, and only at `WARN` -- the rest of
 /// `Workspace::validate()`'s output is the ledger's ordinary business and
 /// belongs to the `validate_workspace` MCP tool, not to the server's log.
-pub fn spawn(root: PathBuf) -> tokio::task::JoinHandle<()> {
+pub fn spawn(root: impl Fn() -> Option<PathBuf> + Send + 'static) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(CHECK_INTERVAL);
         loop {
             interval.tick().await;
+            let Some(root) = root() else { continue };
             match duplicate_report(&root) {
                 Ok(lines) => {
                     for line in lines {

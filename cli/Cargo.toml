@@ -1,5 +1,5 @@
 [package]
-name = "sapphire-ledger-cli"
+name = "sapphire-ledger"
 version = "0.1.0"
 edition.workspace = true
 description.workspace = true
@@ -8,20 +8,40 @@ repository.workspace = true
 categories = ["command-line-utilities", "finance"]
 keywords = ["accounting", "ledger", "double-entry", "cli", "mcp"]
 
+[lib]
+name = "sapphire_ledger"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sapphire-ledger"
 path = "src/main.rs"
 
-[dependencies]
-sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
-sapphire-ledger-mcp  = { path = "../crates/sapphire-ledger-mcp",  version = "0.1.0", default-features = false }
-chrono.workspace = true
-clap.workspace = true
-anyhow.workspace = true
-
 [features]
 default = ["redb-store"]
-redb-store = ["sapphire-ledger-core/redb-store", "sapphire-ledger-mcp/redb-store"]
+redb-store = [
+    "sapphire-ledger-core/redb-store",
+    "sapphire-ledger-mcp/redb-store",
+    "sapphire-framework/redb-store",
+]
+
+[dependencies]
+sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
+sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false, features = ["http-server"] }
+sapphire-framework = { workspace = true, features = ["server", "ipc", "keys"] }
+sapphire-bridge-client.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+chrono.workspace = true
+clap.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "time"] }
+tokio-util.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
+async-trait = "0.1"
+http-body-util = "0.1"
 tempfile.workspace = true
+tower = { version = "0.5", features = ["util"] }

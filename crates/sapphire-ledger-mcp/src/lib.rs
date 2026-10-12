@@ -1,7 +1,7 @@
 //! MCP server logic for sapphire-ledger.
 //!
-//! Consumed by `sapphire-ledger-cli` (stdio transport) and, later, by
-//! `sapphire-ledger-server` (HTTP transport).
+//! Consumed by `sapphire-ledger`: stdio transport for `sapphire-ledger mcp`,
+//! HTTP transport for the `/mcp` its server mounts.
 
 pub mod server;
 
@@ -11,4 +11,4 @@ pub mod http;
 pub use server::{SapphireLedgerServer, run};
 
 #[cfg(feature = "http-server")]
-pub use http::mcp_router;
+pub use http::{StateSource, mcp_router, mcp_router_with};

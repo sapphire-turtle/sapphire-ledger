@@ -1,22 +1,45 @@
-mod cli;
-mod commands;
-mod posting;
-
 use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser as _;
-
-use cli::{Cli, Command};
+use sapphire_ledger::cli::{Cli, Command, FrameworkCommand};
+use sapphire_ledger::{commands, serve};
+use sapphire_ledger_core::AppKind;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Init {
+        // A bare invocation *is* `serve`: what the service manager starts.
+        None | Some(Command::Framework(FrameworkCommand::Serve)) => {
+            sapphire_ledger_core::init_app_context(AppKind::Server);
+            runtime()?.block_on(serve::run())
+        }
+        Some(Command::Framework(command)) => {
+            // The framework's console log goes to stdout (its `serve` wants
+            // journald to see it), but a one-shot verb's stdout is output —
+            // `external-device add` prints its token there, once. Install a
+            // stderr subscriber first: the framework's is first-writer-wins
+            // and steps aside. A stopgap until sapphire-framework#232.
+            let _ = tracing_subscriber::fmt()
+                .with_writer(std::io::stderr)
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+                )
+                .try_init();
+            sapphire_ledger_core::init_app_context(AppKind::Cli);
+            let code =
+                runtime()?.block_on(command.dispatch(serve::build_oneshot(), serve::VERSION))?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
+        Some(Command::Init {
             path,
             base_currency,
-        } => {
+        }) => {
             let target = path.unwrap_or_else(|| PathBuf::from("."));
             sapphire_ledger_core::init_workspace(&target, &base_currency)?;
             println!(
@@ -24,9 +47,13 @@ fn main() -> Result<()> {
                 target.display(),
                 base_currency
             );
+            println!(
+                "To serve it: sapphire-ledger workspace select {}",
+                target.display()
+            );
             Ok(())
         }
-        Command::Check => {
+        Some(Command::Check) => {
             let root = resolve_root(cli.ledger_dir)?;
             let workspace = sapphire_ledger_core::load_workspace(&root)?;
             let issues = workspace.validate();
@@ -46,12 +73,21 @@ fn main() -> Result<()> {
                 anyhow::bail!("validation failed with {} issue(s)", issues.len());
             }
         }
-        Command::Mcp { init } => sapphire_ledger_mcp::run(cli.ledger_dir.as_deref(), init),
-        Command::Account(c) => commands::account(c, &resolve_root(cli.ledger_dir)?),
-        Command::Tx(c) => commands::tx(c, &resolve_root(cli.ledger_dir)?),
-        Command::Assertion(c) => commands::assertion(c, &resolve_root(cli.ledger_dir)?),
-        Command::Price(c) => commands::price(c, &resolve_root(cli.ledger_dir)?),
+        // stdout is the MCP stream here, so this path never initialises the
+        // framework's context (and with it its stdout log): the ledger's own
+        // verbs work on the files and need nothing from it.
+        Some(Command::Mcp { init }) => sapphire_ledger_mcp::run(cli.ledger_dir.as_deref(), init),
+        Some(Command::Account(c)) => commands::account(c, &resolve_root(cli.ledger_dir)?),
+        Some(Command::Tx(c)) => commands::tx(c, &resolve_root(cli.ledger_dir)?),
+        Some(Command::Assertion(c)) => commands::assertion(c, &resolve_root(cli.ledger_dir)?),
+        Some(Command::Price(c)) => commands::price(c, &resolve_root(cli.ledger_dir)?),
     }
+}
+
+fn runtime() -> Result<tokio::runtime::Runtime> {
+    Ok(tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?)
 }
 
 /// Find the ledger root: the given directory, or the nearest one above the

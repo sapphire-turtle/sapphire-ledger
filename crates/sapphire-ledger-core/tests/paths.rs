@@ -122,6 +122,35 @@ fn init_refuses_existing_workspace() {
     fs::remove_dir_all(&root).unwrap();
 }
 
+/// `sapphire-ledger workspace init` makes the marker and writes only the
+/// framework's registry into `config.toml`; `init` turns that into a ledger
+/// and keeps the registry.
+#[test]
+fn init_completes_a_marker_the_framework_made() {
+    let root = tempdir();
+    fs::create_dir_all(root.join(".sapphire-ledger")).unwrap();
+    fs::write(
+        root.join(".sapphire-ledger/config.toml"),
+        "[workspace.home]\nroot = \"/somewhere\"\n",
+    )
+    .unwrap();
+
+    init_workspace(&root, "USD").unwrap();
+
+    let workspace: Workspace = load_workspace(&root).unwrap();
+    assert_eq!(workspace.config.base_currency, "USD");
+    assert!(root.join("transactions").is_dir());
+    let text = fs::read_to_string(root.join(".sapphire-ledger/config.toml")).unwrap();
+    assert!(
+        text.contains("[workspace.home]"),
+        "the registry must survive: {text}"
+    );
+
+    let err = init_workspace(&root, "USD").unwrap_err();
+    assert!(format!("{err}").contains("already contains"));
+    fs::remove_dir_all(&root).unwrap();
+}
+
 #[test]
 fn load_workspace_reads_records() {
     let root = tempdir();

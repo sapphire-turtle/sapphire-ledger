@@ -1,7 +1,6 @@
 //! HTTP transport for the MCP server: [`mcp_router`] builds the `/mcp` route
 //! for a host that already runs an `axum` server to merge into its own.
-//! `sapphire-ledger-server` does that, so the MCP surface and — later — the
-//! sync API share one process, one port and one auth layer.
+//! `sapphire-ledger serve` does that, behind the framework's auth layer.
 //!
 //! ## The `Host` allowlist is not optional
 //!
@@ -38,7 +37,14 @@ use crate::server::{SapphireLedgerServer, WriteObserver};
 /// the bind never breaks local use.
 const LOOPBACK_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
 
-/// Build an [`axum::Router`] serving MCP at `/mcp`.
+/// Where a session finds its ledger: called once per new MCP session.
+///
+/// A host that always serves one ledger hands [`mcp_router`] that ledger; a
+/// host whose ledger can change underneath it (an app server switched to
+/// another workspace) resolves it here, and an error refuses the session.
+pub type StateSource = Arc<dyn Fn() -> std::io::Result<Arc<Mutex<LedgerState>>> + Send + Sync>;
+
+/// Build an [`axum::Router`] serving MCP at `/mcp`, over one ledger.
 ///
 /// Pass the hostnames clients actually use in `allowed_hosts` — the bind
 /// address, a LAN name, a Tailscale name. Loopback is always added, so an
@@ -52,9 +58,23 @@ pub fn mcp_router(
     observer: Option<WriteObserver>,
     allowed_hosts: &[String],
 ) -> axum::Router {
-    let factory_state = Arc::clone(&shared_state);
+    mcp_router_with(
+        Arc::new(move || Ok(Arc::clone(&shared_state))),
+        cancel,
+        observer,
+        allowed_hosts,
+    )
+}
+
+/// As [`mcp_router`], resolving the ledger per session through `source`.
+pub fn mcp_router_with(
+    source: StateSource,
+    cancel: CancellationToken,
+    observer: Option<WriteObserver>,
+    allowed_hosts: &[String],
+) -> axum::Router {
     let factory = move || {
-        let server = SapphireLedgerServer::from_shared(Arc::clone(&factory_state));
+        let server = SapphireLedgerServer::from_shared(source()?);
         // A fresh server is built per session, so the observer is re-attached
         // each time rather than held once.
         Ok(match &observer {

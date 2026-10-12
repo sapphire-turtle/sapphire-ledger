@@ -2,7 +2,7 @@
 name = "sapphire-ledger-mcp"
 version = "0.1.0"
 edition.workspace = true
-description = "MCP server logic for sapphire-ledger; stdio via the CLI, HTTP via sapphire-ledger-server"
+description = "MCP server logic for sapphire-ledger: stdio and HTTP transports"
 license.workspace = true
 repository.workspace = true
 categories = ["finance"]

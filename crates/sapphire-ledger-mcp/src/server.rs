@@ -2,8 +2,7 @@
 //!
 //! Modelled on `sapphire-journal-mcp`: one server struct holding an
 //! `Arc<Mutex<LedgerState>>`, tools declared with rmcp's `#[tool]` macro, and
-//! a stdio entry point. The HTTP transport arrives later, with
-//! `sapphire-ledger-server`.
+//! a stdio entry point. The HTTP transport is in [`crate::http`].
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -656,10 +655,11 @@ pub fn prepare_state(ledger_dir: Option<&Path>, init: bool) -> anyhow::Result<Le
 /// Serve the ledger over stdio, speaking MCP.
 #[tokio::main]
 pub async fn run(ledger_dir: Option<&Path>, init: bool) -> anyhow::Result<()> {
-    // stdout carries JSON-RPC, so every log line goes to stderr.
-    tracing_subscriber::fmt()
+    // stdout carries JSON-RPC, so every log line goes to stderr. `try_init`:
+    // a caller that already installed a (stderr) subscriber keeps it.
+    let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
-        .init();
+        .try_init();
 
     let state = prepare_state(ledger_dir, init)?;
     let server = SapphireLedgerServer::new(state);
