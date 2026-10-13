@@ -412,16 +412,18 @@ fn build_posting(
 }
 
 /// One posting flattened with its transaction's context, which is what a
-/// caller asking "what happened to this account" actually wants.
-#[derive(serde::Serialize)]
-struct PostingHit {
-    transaction_id: String,
-    date: chrono::NaiveDate,
-    narration: String,
-    account_id: Option<String>,
-    account_name: Option<String>,
-    amount: String,
-    currency: String,
+/// caller asking "what happened to this account" actually wants:
+/// `query_postings` answers with a JSON array of these.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostingHit {
+    pub transaction_id: String,
+    pub date: chrono::NaiveDate,
+    pub narration: String,
+    pub account_id: Option<String>,
+    pub account_name: Option<String>,
+    /// Signed decimal, as a string so it survives JSON.
+    pub amount: String,
+    pub currency: String,
 }
 
 // ── methods ─────────────────────────────────────────────────────────────────────
