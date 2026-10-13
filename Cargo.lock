@@ -236,7 +236,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -247,7 +247,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1211,7 +1211,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1500,7 +1500,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2839,7 +2839,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4030,7 +4030,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4043,7 +4043,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4069,8 +4069,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a36598961c0add654430b941164509bd72c30b61a447c908f66f6688dcb2afc"
 dependencies = [
  "sapphire-framework-backend",
  "sapphire-framework-ipc",
@@ -4081,8 +4082,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-backend"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a88b638465b03ad6c9638c85be02ead757f08bf3084a7e9574551b346b7f9f1a"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4101,7 +4103,8 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-bridge-api"
 version = "2.3.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "609a7098a9959db900727f3b674865031c4aa4c0196948c5cbf0564b0a0b1eac"
 dependencies = [
  "clap",
  "grain-id",
@@ -4111,8 +4114,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-bridge-client"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aff3edd16dd2683497c41e34a99063d4f2d8cb41b0c274285d7999c54c8844ef"
 dependencies = [
  "sapphire-framework-bridge-api",
  "sapphire-framework-ipc",
@@ -4123,8 +4127,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-ipc"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c78e0f18a209414a7061d399ac52f2968f4b73cd98f87616ee1fb669da5a077c"
 dependencies = [
  "dirs",
  "libc",
@@ -4139,8 +4144,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-keys"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6427ed378e8ab5f59a8628232433c1102968b0171b1c828885a0a30641ffb595"
 dependencies = [
  "async-trait",
  "axum",
@@ -4155,8 +4161,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-mcp"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4037191e23399585b891bcd60983eebd33ce93ecbfd932152e7cb49e06c7fa20"
 dependencies = [
  "axum",
  "rmcp",
@@ -4174,8 +4181,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-retrieve"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36b6c91f0ac936d1c61e816ba69e63b72cf345dc89a0b2f15bfe4937c0674c73"
 dependencies = [
  "redb",
  "serde",
@@ -4187,8 +4195,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-server"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e10d40ebc0c65d41917adbba0ae4ad571f52931c83d301aaf55720a2db2f47cf"
 dependencies = [
  "axum",
  "clap",
@@ -4217,7 +4226,8 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-server-api"
 version = "4.1.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a76503762b4af57ab5d846a9f8e053652abaeecdfaaebae689406c8dc752f49"
 dependencies = [
  "grain-id",
  "serde",
@@ -4225,8 +4235,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-service"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec8a49520b37379be00c8fa46fb1f8e9ce6425c055cd6cee89c86caf155b8149"
 dependencies = [
  "clap",
  "libc",
@@ -4237,8 +4248,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-session"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "648f6a36079eddb2e1cd0c62f9181b4843c36817f9164131d5dd25afd0397e7a"
 dependencies = [
  "grain-id",
  "sapphire-framework-sync",
@@ -4251,8 +4263,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-sync"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93e47022ce82f72c1f2a0e8664c60e64c6f4d9693a462db3ce78a968e3b211c9"
 dependencies = [
  "grain-id",
  "ignore",
@@ -4268,8 +4281,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-track"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90ef99fa0eb5456c411ebe5a408600f067f7072a79bdd808cef994549568d2bd"
 dependencies = [
  "redb",
  "thiserror 2.0.18",
@@ -4278,8 +4292,9 @@ dependencies = [
 
 [[package]]
 name = "sapphire-framework-workspace"
-version = "0.16.0"
-source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "196d9bec69ac87b80c67a5ef5c3e744a7f07157de4f5f960cb019db7fe085880"
 dependencies = [
  "chrono",
  "clap",
@@ -4715,7 +4730,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4984,7 +4999,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5405,7 +5420,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6013,7 +6028,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
