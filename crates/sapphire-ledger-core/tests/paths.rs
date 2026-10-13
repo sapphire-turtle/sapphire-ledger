@@ -24,7 +24,7 @@ fn tempdir() -> PathBuf {
 fn account_name_to_path_roundtrip() {
     let name = "Assets:Cash:USD";
     let rel = account_relative_path(name).unwrap();
-    assert_eq!(rel, Path::new("accounts/Assets/Cash/USD.toml"));
+    assert_eq!(rel, Path::new("accounts/Assets/Cash/USD.md"));
     let back = account_name_from_relative_path(&rel).unwrap();
     assert_eq!(back, name);
 }
@@ -33,7 +33,7 @@ fn account_name_to_path_roundtrip() {
 fn account_name_single_segment() {
     let name = "Equity";
     let rel = account_relative_path(name).unwrap();
-    assert_eq!(rel, Path::new("accounts/Equity.toml"));
+    assert_eq!(rel, Path::new("accounts/Equity.md"));
     assert_eq!(account_name_from_relative_path(&rel).unwrap(), name);
 }
 
@@ -51,7 +51,7 @@ fn account_name_rejects_empty_and_traversal() {
 fn transaction_path_format() {
     let date = NaiveDate::from_ymd_opt(2026, 5, 21).unwrap();
     let path = transaction_relative_path(date, "0a1b2c3");
-    assert_eq!(path, Path::new("transactions/2026/05/0a1b2c3.toml"));
+    assert_eq!(path, Path::new("transactions/2026/05/0a1b2c3.md"));
 }
 
 #[test]
@@ -158,47 +158,53 @@ fn load_workspace_reads_records() {
 
     fs::create_dir_all(root.join("accounts/Assets/Cash")).unwrap();
     fs::write(
-        root.join("accounts/Assets/Cash/JPY.toml"),
-        r#"
-id = "acct001"
-name = "Assets:Cash:JPY"
-type = "Asset"
-opened_at = "2026-05-21"
+        root.join("accounts/Assets/Cash/JPY.md"),
+        r#"---
+id: acct001
+name: Assets:Cash:JPY
+type: Asset
+opened_at: 2026-05-21
+---
+
+The wallet.
 "#,
     )
     .unwrap();
 
     fs::create_dir_all(root.join("accounts/Expenses")).unwrap();
     fs::write(
-        root.join("accounts/Expenses/Food.toml"),
-        r#"
-id = "acct002"
-name = "Expenses:Food"
-type = "Expense"
-opened_at = "2026-05-21"
+        root.join("accounts/Expenses/Food.md"),
+        r#"---
+id: acct002
+name: Expenses:Food
+type: Expense
+opened_at: 2026-05-21
+---
 "#,
     )
     .unwrap();
 
     fs::create_dir_all(root.join("transactions/2026/05")).unwrap();
     fs::write(
-        root.join("transactions/2026/05/tx0001.toml"),
-        r#"
-id = "tx0001"
-date = "2026-05-21"
-narration = "lunch"
-created_at = "2026-05-21T12:00:00+09:00"
-updated_at = "2026-05-21T12:00:00+09:00"
+        root.join("transactions/2026/05/tx0001.md"),
+        r#"---
+id: tx0001
+date: 2026-05-21
+narration: lunch
+created_at: 2026-05-21T12:00:00+09:00
+updated_at: 2026-05-21T12:00:00+09:00
+postings:
+- account_name: Expenses:Food
+  amount: 1000
+  currency: JPY
+- account_name: Assets:Cash:JPY
+  amount: -1000
+  currency: JPY
+---
 
-[[postings]]
-account_name = "Expenses:Food"
-amount = "1000"
-currency = "JPY"
+Split with a colleague.
 
-[[postings]]
-account_name = "Assets:Cash:JPY"
-amount = "-1000"
-currency = "JPY"
+- paid in cash
 "#,
     )
     .unwrap();
@@ -207,6 +213,22 @@ currency = "JPY"
     assert_eq!(workspace.accounts.len(), 2);
     assert_eq!(workspace.transactions.len(), 1);
     assert_eq!(workspace.transactions[0].narration, "lunch");
+    assert_eq!(
+        workspace.transactions[0].comment.as_deref(),
+        Some("Split with a colleague.\n\n- paid in cash")
+    );
+    let wallet = workspace
+        .accounts
+        .iter()
+        .find(|a| a.id == "acct001")
+        .unwrap();
+    assert_eq!(wallet.description.as_deref(), Some("The wallet."));
+    let food = workspace
+        .accounts
+        .iter()
+        .find(|a| a.id == "acct002")
+        .unwrap();
+    assert_eq!(food.description, None, "an empty body is no description");
 
     fs::remove_dir_all(&root).unwrap();
 }

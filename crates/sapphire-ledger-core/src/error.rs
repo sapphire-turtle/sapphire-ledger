@@ -12,6 +12,9 @@ pub enum Error {
     #[error("TOML serialize error: {0}")]
     TomlSerialize(#[from] toml::ser::Error),
 
+    #[error(transparent)]
+    Frontmatter(#[from] sapphire_frontmatter::Error),
+
     #[error("validation error: {0}")]
     Validation(String),
 

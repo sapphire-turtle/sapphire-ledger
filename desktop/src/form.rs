@@ -59,6 +59,8 @@ pub struct TxForm {
     pub tags: String,
     pub status: Status,
     pub postings: Vec<PostingRow>,
+    /// Markdown; the body of the transaction's file.
+    pub comment: String,
 }
 
 impl TxForm {
@@ -76,6 +78,7 @@ impl TxForm {
             tags: String::new(),
             status: Status::Unset,
             postings: vec![row.clone(), row],
+            comment: String::new(),
         }
     }
 
@@ -156,6 +159,7 @@ impl TxForm {
                     memo: optional(&row.memo),
                 })
                 .collect(),
+            comment: optional(&self.comment),
         })
     }
 }
@@ -169,6 +173,7 @@ pub struct AccountForm {
     pub currencies: String,
     /// `YYYY-MM-DD`.
     pub opened_at: String,
+    /// Markdown; the body of the account's file.
     pub description: String,
 }
 
@@ -265,6 +270,7 @@ mod tests {
                     memo: String::new(),
                 })
                 .collect(),
+            comment: String::new(),
         }
     }
 

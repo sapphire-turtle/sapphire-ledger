@@ -32,7 +32,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sapphire_ledger_core::workspace::{ACCOUNTS_DIR, ASSERTIONS_DIR, PRICES_DIR, TRANSACTIONS_DIR};
-use sapphire_ledger_core::{Account, Assertion, PriceEntry, Transaction};
+use sapphire_ledger_core::{
+    Account, Assertion, PriceEntry, Transaction, load_markdown, load_toml, walk_markdown_files,
+    walk_toml_files,
+};
 
 /// How often the watch re-walks the workspace looking for duplicate ids.
 ///
@@ -48,7 +51,7 @@ const CHECK_INTERVAL: Duration = Duration::from_secs(300);
 /// and every path carrying it. `ValidationIssue` -- what `Workspace::validate()`
 /// already returns, and which already flags duplicate ids -- carries the ids
 /// but not the paths, and the paths are what a human needs to fix this. So
-/// this walks the directories itself with `walk_toml_files` rather than
+/// this walks the directories itself rather than
 /// reformatting `validate()`'s output.
 ///
 /// A file that fails to parse is skipped, not fatal, and so is a directory
@@ -63,17 +66,31 @@ pub fn duplicate_report(root: &Path) -> anyhow::Result<Vec<String>> {
     extend_or_log(
         &mut lines,
         "transaction",
-        duplicates_of::<Transaction, _>(root, TRANSACTIONS_DIR, "transaction id", |t| t.id.clone()),
+        duplicates_of(
+            root,
+            TRANSACTIONS_DIR,
+            Markdown,
+            "transaction id",
+            |t: &Transaction| t.id.clone(),
+        ),
     );
     extend_or_log(
         &mut lines,
         "assertion",
-        duplicates_of::<Assertion, _>(root, ASSERTIONS_DIR, "assertion id", |a| a.id.clone()),
+        duplicates_of(
+            root,
+            ASSERTIONS_DIR,
+            Toml,
+            "assertion id",
+            |a: &Assertion| a.id.clone(),
+        ),
     );
     extend_or_log(
         &mut lines,
         "price",
-        duplicates_of::<PriceEntry, _>(root, PRICES_DIR, "price id", |p| p.id.clone()),
+        duplicates_of(root, PRICES_DIR, Toml, "price id", |p: &PriceEntry| {
+            p.id.clone()
+        }),
     );
     // Accounts need both keys. The path is derived from the account's
     // *name*, so the canonical raced-rename artifact is one id living at two
@@ -86,12 +103,20 @@ pub fn duplicate_report(root: &Path) -> anyhow::Result<Vec<String>> {
     extend_or_log(
         &mut lines,
         "account",
-        duplicates_of::<Account, _>(root, ACCOUNTS_DIR, "account id", |a| a.id.clone()),
+        duplicates_of(root, ACCOUNTS_DIR, Markdown, "account id", |a: &Account| {
+            a.id.clone()
+        }),
     );
     extend_or_log(
         &mut lines,
         "account",
-        duplicates_of::<Account, _>(root, ACCOUNTS_DIR, "account name", |a| a.name.clone()),
+        duplicates_of(
+            root,
+            ACCOUNTS_DIR,
+            Markdown,
+            "account name",
+            |a: &Account| a.name.clone(),
+        ),
     );
     lines.sort();
     Ok(lines)
@@ -110,17 +135,49 @@ fn extend_or_log(lines: &mut Vec<String>, kind: &str, result: anyhow::Result<Vec
     }
 }
 
-/// Load every `.toml` record of type `T` under `root/dir`, group by the key
-/// `key_of` extracts, and return one report line for every key with more
-/// than one path.
-fn duplicates_of<T, F>(root: &Path, dir: &str, kind: &str, key_of: F) -> anyhow::Result<Vec<String>>
+/// How a record kind is kept on disk.
+trait Format<T> {
+    fn walk(&self, dir: &Path) -> sapphire_ledger_core::Result<Vec<PathBuf>>;
+    fn load(&self, path: &Path) -> sapphire_ledger_core::Result<T>;
+}
+
+struct Toml;
+struct Markdown;
+
+impl<T: serde::de::DeserializeOwned> Format<T> for Toml {
+    fn walk(&self, dir: &Path) -> sapphire_ledger_core::Result<Vec<PathBuf>> {
+        walk_toml_files(dir)
+    }
+    fn load(&self, path: &Path) -> sapphire_ledger_core::Result<T> {
+        load_toml(path)
+    }
+}
+
+impl<T: sapphire_ledger_core::MarkdownRecord> Format<T> for Markdown {
+    fn walk(&self, dir: &Path) -> sapphire_ledger_core::Result<Vec<PathBuf>> {
+        walk_markdown_files(dir)
+    }
+    fn load(&self, path: &Path) -> sapphire_ledger_core::Result<T> {
+        load_markdown(path)
+    }
+}
+
+/// Load every record of type `T` under `root/dir`, group by the key `key_of`
+/// extracts, and return one report line for every key with more than one
+/// path.
+fn duplicates_of<T, F>(
+    root: &Path,
+    dir: &str,
+    format: impl Format<T>,
+    kind: &str,
+    key_of: F,
+) -> anyhow::Result<Vec<String>>
 where
-    T: serde::de::DeserializeOwned,
     F: Fn(&T) -> String,
 {
     let mut by_key: HashMap<String, Vec<PathBuf>> = HashMap::new();
-    for path in sapphire_ledger_core::walk_toml_files(&root.join(dir))? {
-        match sapphire_ledger_core::load_toml::<T>(&path) {
+    for path in format.walk(&root.join(dir))? {
+        match format.load(&path) {
             Ok(record) => by_key.entry(key_of(&record)).or_default().push(path),
             Err(err) => {
                 let err = anyhow::Error::from(err);

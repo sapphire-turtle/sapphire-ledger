@@ -45,7 +45,7 @@ fn create_account_writes_the_hierarchical_path_and_mints_an_id() {
     .expect("create");
     assert_eq!(id.chars().count(), 7);
     assert!(
-        dest.ends_with("accounts/Assets/Cash/JPY.toml"),
+        dest.ends_with("accounts/Assets/Cash/JPY.md"),
         "got {}",
         dest.display()
     );
@@ -100,20 +100,26 @@ fn create_transaction_resolves_names_to_ids_on_disk() {
             posting_by_name("Expenses:Food", "1200"),
             posting_by_name("Assets:Cash:JPY", "-1200"),
         ],
+        None,
     )
     .expect("create");
 
     assert!(
-        dest.ends_with(format!("transactions/2026/05/{id}.toml")),
+        dest.ends_with(format!("transactions/2026/05/{id}.md")),
         "got {}",
         dest.display()
     );
-    let written = std::fs::read_to_string(&dest).expect("read");
-    assert!(
-        written.contains(&format!("account_id = \"{food}\"")),
-        "a name-only posting must be written with its resolved id: {written}"
+    let written: sapphire_ledger_core::Transaction =
+        sapphire_ledger_core::load_markdown(&dest).expect("read back");
+    assert_eq!(
+        written.postings[0].account_id.as_deref(),
+        Some(food.as_str()),
+        "a name-only posting must be written with its resolved id"
     );
-    assert!(written.contains("account_name = \"Expenses:Food\""));
+    assert_eq!(
+        written.postings[0].account_name.as_deref(),
+        Some("Expenses:Food")
+    );
 }
 
 #[test]
@@ -131,6 +137,7 @@ fn create_transaction_rejects_an_unknown_account() {
             posting_by_name("Expenses:Nowhere", "1200"),
             posting_by_name("Assets:Cash:JPY", "-1200"),
         ],
+        None,
     )
     .expect_err("must reject");
     assert!(err.to_string().contains("undefined account"), "got: {err}");
@@ -153,6 +160,7 @@ fn create_transaction_rejects_an_unbalanced_entry_and_writes_nothing() {
             posting_by_name("Expenses:Food", "1200"),
             posting_by_name("Assets:Cash:JPY", "-999"),
         ],
+        None,
     )
     .expect_err("must reject");
     assert!(err.to_string().contains("does not balance"), "got: {err}");
@@ -219,6 +227,7 @@ fn created_records_reload_and_validate_clean() {
             posting_by_name("Expenses:Food", "1200"),
             posting_by_name("Assets:Cash:JPY", "-1200"),
         ],
+        None,
     )
     .expect("create");
 
@@ -249,6 +258,7 @@ fn create_transaction_twice_in_the_same_decisecond_mints_distinct_ids() {
             posting_by_name("Expenses:Food", "1200"),
             posting_by_name("Assets:Cash:JPY", "-1200"),
         ],
+        None,
     )
     .expect("create first");
 
@@ -263,6 +273,7 @@ fn create_transaction_twice_in_the_same_decisecond_mints_distinct_ids() {
             posting_by_name("Expenses:Food", "500"),
             posting_by_name("Assets:Cash:JPY", "-500"),
         ],
+        None,
     )
     .expect("create second");
 
@@ -304,6 +315,7 @@ fn create_transaction_rejects_a_currency_the_account_does_not_allow() {
             },
             posting_by_name("Expenses:Food", "1000"),
         ],
+        None,
     )
     .expect_err("must reject");
     assert!(err.to_string().contains("only allows"), "got: {err}");
@@ -366,6 +378,7 @@ fn transactions_dated_in_different_months_never_share_an_id() {
                 posting_by_name("Expenses:Food", "1200"),
                 posting_by_name("Assets:Cash:JPY", "-1200"),
             ],
+            None,
         )
         .expect("create may");
         let (id_june, _) = ops::create_transaction(
@@ -379,6 +392,7 @@ fn transactions_dated_in_different_months_never_share_an_id() {
                 posting_by_name("Expenses:Food", "500"),
                 posting_by_name("Assets:Cash:JPY", "-500"),
             ],
+            None,
         )
         .expect("create june");
         let after = ops::new_id();
@@ -409,16 +423,11 @@ fn transactions_dated_in_different_months_never_share_an_id() {
 #[test]
 fn create_account_refuses_a_duplicate_name_parked_at_another_path() {
     let dir = ws();
-    let stray = dir.path().join("accounts/Assets/Bar.toml");
+    let stray = dir.path().join("accounts/Assets/Bar.md");
     std::fs::create_dir_all(stray.parent().unwrap()).unwrap();
     std::fs::write(
         &stray,
-        r#"
-id = "acct999"
-name = "Assets:Foo"
-type = "Asset"
-opened_at = "2026-01-01"
-"#,
+        "---\nid: acct999\nname: Assets:Foo\ntype: Asset\nopened_at: 2026-01-01\n---\n",
     )
     .unwrap();
 

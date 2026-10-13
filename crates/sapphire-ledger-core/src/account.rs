@@ -4,6 +4,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::repository::MarkdownRecord;
 
 pub const ACCOUNT_NAME_SEPARATOR: char = ':';
 
@@ -55,8 +56,21 @@ pub struct Account {
     pub opened_at: NaiveDate,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closed_at: Option<NaiveDate>,
+    /// The file's Markdown body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+impl MarkdownRecord for Account {
+    const BODY_FIELD: &'static str = "description";
+
+    fn body(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    fn set_body(&mut self, body: Option<String>) {
+        self.description = body;
+    }
 }
 
 impl Account {

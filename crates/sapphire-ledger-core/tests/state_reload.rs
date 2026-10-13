@@ -54,7 +54,7 @@ fn a_malformed_record_names_its_file_in_the_error() {
     let dir = tempfile::tempdir().expect("tempdir");
     sapphire_ledger_core::init_workspace(dir.path(), "JPY").expect("init");
 
-    let broken = dir.path().join("transactions/2026/05/broken.toml");
+    let broken = dir.path().join("assertions/2026/05/broken.toml");
     std::fs::create_dir_all(broken.parent().unwrap()).expect("mkdir");
     std::fs::write(&broken, "id = \"broken\"\nthis is not toml\n").expect("write");
 
@@ -67,6 +67,29 @@ fn a_malformed_record_names_its_file_in_the_error() {
     let chain = chain(&err);
     assert!(
         chain.contains("TOML parse error"),
+        "the chain must keep saying what went wrong, got: {chain}"
+    );
+}
+
+/// The same for a Markdown record: a front matter block that never closes.
+#[test]
+fn a_malformed_markdown_record_names_its_file_in_the_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    sapphire_ledger_core::init_workspace(dir.path(), "JPY").expect("init");
+
+    let broken = dir.path().join("transactions/2026/05/broken.md");
+    std::fs::create_dir_all(broken.parent().unwrap()).expect("mkdir");
+    std::fs::write(&broken, "---\nid: broken\n").expect("write");
+
+    let err = sapphire_ledger_core::load_workspace(dir.path())
+        .expect_err("a malformed record must fail the load");
+    assert!(
+        err.to_string().contains("broken.md"),
+        "the error must name the offending file, got: {err}"
+    );
+    let chain = chain(&err);
+    assert!(
+        chain.contains("front matter is not closed"),
         "the chain must keep saying what went wrong, got: {chain}"
     );
 }

@@ -33,6 +33,8 @@ sapphire-framework = { version = "0.18.0", default-features = false }
 # The bridge client an app server connects with. The facade's `bridge` module
 # is the daemon side, so the client is a direct dependency at the same release.
 sapphire-bridge-client = { package = "sapphire-framework-bridge-client", version = "0.18.0" }
+# YAML front matter for the Markdown records (accounts, transactions).
+sapphire-frontmatter = { package = "sapphire-framework-frontmatter", version = "0.18.0" }
 sapphire-workspace = { package = "sapphire-framework-workspace", version = "0.18.0", default-features = false }
 schemars = "1.0"
 serde = { version = "1", features = ["derive"] }

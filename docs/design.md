@@ -15,21 +15,66 @@ file goes deeper into the *why* and the on-disk shape.
 - **Strict integrity**: a corrupt journal is worse than a slow one, so
   validation always errs on the side of rejecting bad data.
 
-## Format: TOML
+## Format: Markdown with YAML front matter, and TOML
 
-Every record on disk is a single TOML file. TOML was chosen over the
-obvious alternatives for these reasons:
+Every record on disk is a single file in one of two formats:
+
+| Record | Format | Why |
+|---|---|---|
+| Account, transaction | **Markdown with YAML front matter** | They carry free text — an account's `description`, a transaction's `comment` — that people and agents write as prose. The Markdown body is where prose belongs; every other field is front matter. |
+| Assertion, price-log entry, workspace config | **TOML** | No free text, so nothing to gain from a body. |
+
+The front matter is read and written by sapphire-framework's
+`sapphire-framework-frontmatter` (YAML via `serde-saphyr`), shared with the
+other `sapphire-*` apps.
+
+The reasons TOML was first chosen over YAML still shape the format:
+
+- **Decimal values** (amounts, exchange rates) are persisted as **strings**
+  (`"1200"`, `"150.5"`) via `#[serde(with = "rust_decimal::serde::str")]`, so
+  no float ever touches money. Hand-written YAML may leave an amount unquoted
+  (`amount: 1200.50`); it is read as the same digits, not through a float.
+- **Values YAML would misread** — a tag `yes`, a currency `NO`, an id of
+  digits, a date — are quoted when the ledger writes them.
+- **Broken YAML fails loudly**: `load_workspace` is fail-fast and names the
+  file, so a malformed record written by an agent stops the load rather than
+  being skipped.
+
+Assertions and prices stay TOML for the reasons in the table below, which
+was the original comparison:
 
 | Format | Verdict |
 |---|---|
-| YAML | Indentation-sensitive; AI agents often produce broken YAML; `serde_yaml` is effectively frozen. |
+| YAML (alone) | Indentation-sensitive; AI agents often produce broken YAML; `serde_yaml` is effectively frozen. |
 | JSON / JSONL | No comments; JSONL doesn't match "one file per record". |
 | Beancount | Excellent semantics but its tooling assumes many entries per file, which is the opposite of what we want for git-merge tolerance. |
 | **TOML** | Line-oriented (small, local merge conflicts), Rust ecosystem is first-class, AI writes it reliably, supports comments, already used elsewhere in the `sapphire-*` workspace. |
 
-Decimal values (amounts, exchange rates) are persisted as **strings**
-(`"1200"`, `"150.5"`) because TOML has no native decimal type — we parse
-them with `rust_decimal::Decimal` via `#[serde(with = "rust_decimal::serde::str")]`.
+### Schema versions and migration
+
+`schema_version` in `.sapphire-ledger/config.toml` names the on-disk layout:
+
+1. Every record is TOML.
+2. Accounts and transactions are Markdown with YAML front matter.
+
+A build reads exactly its own version: `load_workspace` and every
+`core::ops` write refuse an older ledger (pointing at `sapphire-ledger
+migrate`) and a newer one (pointing at an upgrade). `sapphire-ledger migrate`
+([`migrate.rs`](../crates/sapphire-ledger-core/src/migrate.rs)) upgrades in
+place:
+
+- Nothing is written until every TOML record has parsed, read back unchanged
+  from its Markdown, and been checked against any `.md` already at its
+  destination. `--dry-run` stops there.
+- `schema_version` is bumped last, so an interrupted run leaves an old-version
+  ledger that a re-run finishes.
+- TOML `#` comments have nowhere to go; files that look like they had some
+  are listed.
+
+A TOML account or transaction inside a version-2 ledger — what a client still
+on version 1 syncs in after another machine migrated — fails the load, and
+`migrate` sweeps it up. Every machine sharing a ledger should be upgraded
+together.
 
 ## File granularity: one record, one file
 
@@ -44,9 +89,9 @@ my-ledger/
 │   ├── config.toml          # workspace config (git-tracked)
 │   └── .gitignore           # vestigial: still lists cache.sqlite
 ├── accounts/
-│   └── {Type}/.../{Leaf}.toml
+│   └── {Type}/.../{Leaf}.md
 ├── transactions/
-│   └── {year}/{MM}/{grain-id}.toml
+│   └── {year}/{MM}/{grain-id}.md
 ├── assertions/
 │   └── {year}/{MM}/{grain-id}.toml
 └── prices/
@@ -64,9 +109,9 @@ directly to a directory tree under `accounts/`:
 
 | Account name | File path |
 |---|---|
-| `Equity` | `accounts/Equity.toml` |
-| `Assets:Cash:JPY` | `accounts/Assets/Cash/JPY.toml` |
-| `Assets:Cash:USD` | `accounts/Assets/Cash/USD.toml` |
+| `Equity` | `accounts/Equity.md` |
+| `Assets:Cash:JPY` | `accounts/Assets/Cash/JPY.md` |
+| `Assets:Cash:USD` | `accounts/Assets/Cash/USD.md` |
 
 Path conversion functions (`account_relative_path`,
 `account_name_from_relative_path`) live in
@@ -80,8 +125,9 @@ Account name validation rejects:
 
 ### Transaction, assertion and price-log paths
 
-All three follow `{kind}/{year}/{MM}/{grain-id}.toml`. The id is stored both
-as the filename and as a field inside the file (`id = "0a1b2c3"`) so a record
+All three follow `{kind}/{year}/{MM}/{grain-id}.{ext}` — `.md` for
+transactions, `.toml` for assertions and prices. The id is stored both
+as the filename and as a field inside the file (`id: 0a1b2c3`) so a record
 survives being moved or copied.
 
 Ids come from [`grain-id`](https://crates.io/crates/grain-id). Records whose id
@@ -117,10 +163,10 @@ This section summarizes the shapes; the source is authoritative.
 `Account` carries an `id`. Postings and assertions reference an account by
 `account_id`, with a denormalized `account_name` beside it:
 
-```toml
-[[postings]]
-account_id   = "0a1b2c3"        # authoritative; survives a rename
-account_name = "Expenses:Food"  # for whoever reads the raw file
+```yaml
+postings:
+- account_id: 0a1b2c3           # authoritative; survives a rename
+  account_name: Expenses:Food   # for whoever reads the raw file
 ```
 
 The id is what links; the name is never used for matching when the id is
@@ -143,19 +189,30 @@ Three rules follow:
    at two paths.
 3. **Either field alone is accepted on read.** Both present means the id wins;
    name-only is resolved to an id when the record is written; neither is an
-   error. Hand-written TOML must not require an id lookup first.
+   error. A hand-written record must not require an id lookup first.
 
 ### Account ([`account.rs`](../crates/sapphire-ledger-core/src/account.rs))
 
-```toml
-id = "a3k9m2p"
-name = "Assets:Cash:USD"
-type = "Asset"               # Asset | Liability | Equity | Income | Expense
-currencies = ["USD"]         # empty/omitted = any currency allowed
-opened_at = "2026-05-21"
-# closed_at = "..."          # optional
-# description = "ドル現金"   # optional
+`accounts/Assets/Cash/USD.md`:
+
+```markdown
+---
+id: a3k9m2p
+name: Assets:Cash:USD
+type: Asset                  # Asset | Liability | Equity | Income | Expense
+currencies:                  # empty/omitted = any currency allowed
+- USD
+opened_at: 2026-05-21
+# closed_at: ...             # optional
+---
+
+ドル現金。旅行用の封筒に入れてある。
 ```
+
+The body is the optional `description`, in Markdown. A `description:` key in
+the front matter is also accepted while the body is empty, so whoever writes
+the file by hand need not know which field lives where; both at once is an
+error.
 
 `Account::allows_currency(&str)` returns `true` if `currencies` is empty
 or contains the requested currency. The validator uses this to flag
@@ -163,30 +220,37 @@ postings that violate an account's currency constraint.
 
 ### Transaction ([`transaction.rs`](../crates/sapphire-ledger-core/src/transaction.rs))
 
-```toml
-id = "0a1b2c3"
-date = "2026-05-21"
-narration = "イオン買い物"
-payee = "イオン"               # optional
-tags = ["grocery"]             # optional
-status = "cleared"             # optional: cleared | pending
-created_at = "2026-05-21T18:30:00+09:00"
-updated_at = "2026-05-21T18:30:00+09:00"
+`transactions/2026/05/0a1b2c3.md`:
 
-[[postings]]
-account_id   = "0f2e9a1"       # authoritative; account_name is denormalized
-account_name = "Expenses:Food"
-amount = "1200"                # string-encoded Decimal
-currency = "JPY"
-# memo = "..."                 # optional, per-posting
-# price = { value = "150", currency = "JPY" }   # optional, see Multi-currency
+```markdown
+---
+id: 0a1b2c3
+date: 2026-05-21
+narration: イオン買い物
+payee: イオン                 # optional
+tags:                         # optional
+- grocery
+status: cleared               # optional: cleared | pending
+created_at: 2026-05-21T18:30:00+09:00
+updated_at: 2026-05-21T18:30:00+09:00
+postings:
+- account_id: 0f2e9a1         # authoritative; account_name is denormalized
+  account_name: Expenses:Food
+  amount: "1200"              # string-encoded Decimal
+  currency: JPY
+  # memo: ...                 # optional, per-posting
+  # price: { value: "150", currency: JPY }   # optional, see Multi-currency
+- account_id: 7c4d8b0
+  account_name: Liabilities:CreditCard:Rakuten
+  amount: "-1200"
+  currency: JPY
+---
 
-[[postings]]
-account_id   = "7c4d8b0"
-account_name = "Liabilities:CreditCard:Rakuten"
-amount = "-1200"
-currency = "JPY"
+週末のまとめ買い。ポイント 2 倍デー。
 ```
+
+`narration` is the one-line title; the body is the optional `comment`, in
+Markdown, with the same front-matter fallback as an account's description.
 
 `Transaction::validate()` enforces:
 
@@ -199,20 +263,20 @@ currency = "JPY"
 
 A cross-currency transaction uses Beancount-style inline prices:
 
-```toml
+```yaml
 # Move 15,000 JPY into a USD cash account at a rate of 150 JPY/USD.
-[[postings]]
-account_id   = "9k3n7x2"
-account_name = "Assets:Cash:USD"
-amount = "100"
-currency = "USD"
-price = { value = "150", currency = "JPY" }   # 1 USD = 150 JPY
-
-[[postings]]
-account_id   = "2m5p8q1"
-account_name = "Assets:Cash:JPY"
-amount = "-15000"
-currency = "JPY"
+postings:
+- account_id: 9k3n7x2
+  account_name: Assets:Cash:USD
+  amount: "100"
+  currency: USD
+  price:                      # 1 USD = 150 JPY
+    value: "150"
+    currency: JPY
+- account_id: 2m5p8q1
+  account_name: Assets:Cash:JPY
+  amount: "-15000"
+  currency: JPY
 ```
 
 `Posting::balance_contribution()` returns `(currency, signed_amount)`:
@@ -348,7 +412,7 @@ check` on the CLI) can return structured reports.
 ## Cache strategy
 
 There is deliberately **no ledger-specific cache**. `load_workspace` walks the
-TOML files on every load, which is milliseconds at household scale.
+record files on every load, which is milliseconds at household scale.
 
 The framework supplies mtime tracking (`sapphire-framework-track`) and search
 (`sapphire-framework-retrieve`) when a consumer needs them; neither is wired
@@ -372,7 +436,7 @@ sapphire-ledger/
 ├── cli/                     # `sapphire-ledger`, the one binary: CLI, app server, `mcp`
 ├── desktop/                 # egui GUI: a client of the app server
 └── crates/
-    ├── sapphire-ledger-core/  # data model, TOML I/O, validation, write path
+    ├── sapphire-ledger-core/  # data model, record I/O, migration, validation, write path
     └── sapphire-ledger-mcp/   # the ledger's MCP tools and server methods — LIBRARY only
 ```
 
@@ -591,6 +655,8 @@ permissive until there is a reason to tighten it.
 - ✅ Workspace scaffold, `cargo build` clean.
 - ✅ Data model (accounts, transactions, postings, prices, assertions, config).
 - ✅ TOML round-trip with serde.
+- ✅ Accounts and transactions as Markdown with YAML front matter (schema 2),
+  with `sapphire-ledger migrate` from schema 1.
 - ✅ Path conventions, workspace discovery, `init_workspace`.
 - ✅ Repository I/O and cross-record validation + `sapphire-ledger check`.
 - ✅ Record ids everywhere, with id-linked account references.

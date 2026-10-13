@@ -42,6 +42,17 @@ pub enum Command {
     },
     /// Load every record and report any validation issues
     Check,
+    /// Upgrade the ledger's files to the layout this build reads.
+    ///
+    /// Moves accounts and transactions from TOML to Markdown with YAML front
+    /// matter, their description or comment becoming the body. Safe to re-run;
+    /// commit (or back up) the ledger first, since TOML `#` comments are not
+    /// carried over.
+    Migrate {
+        /// Check every record and list what would change, writing nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Manage the chart of accounts.
     #[command(subcommand)]
     Account(AccountCommand),
@@ -75,6 +86,7 @@ pub enum AccountCommand {
         /// `YYYY-MM-DD` the account opened. Defaults to today.
         #[arg(long, value_name = "DATE")]
         opened_at: Option<String>,
+        /// Free-form notes, kept as the Markdown body of the account's file.
         #[arg(long)]
         description: Option<String>,
     },
@@ -113,6 +125,9 @@ pub enum TxCommand {
             allow_hyphen_values = true
         )]
         postings: Vec<String>,
+        /// Free-form notes, kept as the Markdown body of the transaction's file.
+        #[arg(long)]
+        comment: Option<String>,
     },
     /// List postings, newest last.
     List {

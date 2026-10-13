@@ -9,26 +9,24 @@ fn a_duplicate_transaction_id_is_reported_with_every_path() {
     sapphire_ledger_core::init_workspace(root, "JPY").expect("init");
 
     for month in ["05", "06"] {
-        let path = root.join(format!("transactions/2026/{month}/dup0001.toml"));
+        let path = root.join(format!("transactions/2026/{month}/dup0001.md"));
         std::fs::create_dir_all(path.parent().unwrap()).expect("mkdir");
         std::fs::write(
             &path,
-            r#"
-id = "dup0001"
-date = "2026-05-21"
-narration = "same id, two months"
-created_at = "2026-05-21T18:30:00+09:00"
-updated_at = "2026-05-21T18:30:00+09:00"
-
-[[postings]]
-account_name = "Expenses:Food"
-amount = "10"
-currency = "JPY"
-
-[[postings]]
-account_name = "Assets:Cash"
-amount = "-10"
-currency = "JPY"
+            r#"---
+id: dup0001
+date: 2026-05-21
+narration: same id, two months
+created_at: 2026-05-21T18:30:00+09:00
+updated_at: 2026-05-21T18:30:00+09:00
+postings:
+- account_name: Expenses:Food
+  amount: 10
+  currency: JPY
+- account_name: Assets:Cash
+  amount: -10
+  currency: JPY
+---
 "#,
         )
         .expect("write");
@@ -54,27 +52,25 @@ fn a_clean_ledger_reports_nothing() {
     sapphire_ledger_core::init_workspace(root, "JPY").expect("init");
 
     for id in ["tx0001", "tx0002"] {
-        let path = root.join(format!("transactions/2026/05/{id}.toml"));
+        let path = root.join(format!("transactions/2026/05/{id}.md"));
         std::fs::create_dir_all(path.parent().unwrap()).expect("mkdir");
         std::fs::write(
             &path,
             format!(
-                r#"
-id = "{id}"
-date = "2026-05-21"
-narration = "distinct transactions, same month"
-created_at = "2026-05-21T18:30:00+09:00"
-updated_at = "2026-05-21T18:30:00+09:00"
-
-[[postings]]
-account_name = "Expenses:Food"
-amount = "10"
-currency = "JPY"
-
-[[postings]]
-account_name = "Assets:Cash"
-amount = "-10"
-currency = "JPY"
+                r#"---
+id: {id}
+date: 2026-05-21
+narration: distinct transactions, same month
+created_at: 2026-05-21T18:30:00+09:00
+updated_at: 2026-05-21T18:30:00+09:00
+postings:
+- account_name: Expenses:Food
+  amount: 10
+  currency: JPY
+- account_name: Assets:Cash
+  amount: -10
+  currency: JPY
+---
 "#
             ),
         )
@@ -97,16 +93,17 @@ fn a_duplicate_account_name_is_reported_too() {
     sapphire_ledger_core::init_workspace(root, "JPY").expect("init");
 
     for leaf in ["Bar", "Foo"] {
-        let path = root.join(format!("accounts/Assets/{leaf}.toml"));
+        let path = root.join(format!("accounts/Assets/{leaf}.md"));
         std::fs::create_dir_all(path.parent().unwrap()).expect("mkdir");
         std::fs::write(
             &path,
             format!(
-                r#"
-id = "acct{leaf}"
-name = "Assets:Foo"
-type = "Asset"
-opened_at = "2026-01-01"
+                r#"---
+id: acct{leaf}
+name: Assets:Foo
+type: Asset
+opened_at: 2026-01-01
+---
 "#
             ),
         )
@@ -118,8 +115,8 @@ opened_at = "2026-01-01"
         .iter()
         .find(|l| l.contains("Assets:Foo"))
         .unwrap_or_else(|| panic!("a duplicated account name must be reported: {report:?}"));
-    assert!(line.contains("Bar.toml"), "must name every path: {line}");
-    assert!(line.contains("Foo.toml"), "must name every path: {line}");
+    assert!(line.contains("Bar.md"), "must name every path: {line}");
+    assert!(line.contains("Foo.md"), "must name every path: {line}");
 }
 
 #[test]
@@ -133,26 +130,28 @@ fn a_duplicate_account_id_across_two_names_is_reported() {
     let root = dir.path();
     sapphire_ledger_core::init_workspace(root, "JPY").expect("init");
 
-    let old_path = root.join("accounts/Assets/Cash.toml");
-    let new_path = root.join("accounts/Assets/Wallet.toml");
+    let old_path = root.join("accounts/Assets/Cash.md");
+    let new_path = root.join("accounts/Assets/Wallet.md");
     std::fs::create_dir_all(old_path.parent().unwrap()).expect("mkdir");
     std::fs::write(
         &old_path,
-        r#"
-id = "acctCash"
-name = "Assets:Cash"
-type = "Asset"
-opened_at = "2026-01-01"
+        r#"---
+id: acctCash
+name: Assets:Cash
+type: Asset
+opened_at: 2026-01-01
+---
 "#,
     )
     .expect("write");
     std::fs::write(
         &new_path,
-        r#"
-id = "acctCash"
-name = "Assets:Wallet"
-type = "Asset"
-opened_at = "2026-01-01"
+        r#"---
+id: acctCash
+name: Assets:Wallet
+type: Asset
+opened_at: 2026-01-01
+---
 "#,
     )
     .expect("write");
@@ -164,6 +163,6 @@ opened_at = "2026-01-01"
         .unwrap_or_else(|| {
             panic!("a duplicated account id across two names must be reported: {report:?}")
         });
-    assert!(line.contains("Cash.toml"), "must name every path: {line}");
-    assert!(line.contains("Wallet.toml"), "must name every path: {line}");
+    assert!(line.contains("Cash.md"), "must name every path: {line}");
+    assert!(line.contains("Wallet.md"), "must name every path: {line}");
 }

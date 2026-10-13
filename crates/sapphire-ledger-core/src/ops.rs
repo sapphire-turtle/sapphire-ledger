@@ -33,13 +33,18 @@ use rust_decimal::Decimal;
 
 use crate::account::{Account, AccountType, resolve_account};
 use crate::assertion::{Assertion, Balance};
+use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::prices::PriceEntry;
-use crate::repository::{load_toml, save_toml, walk_toml_files};
+use crate::repository::{
+    check_schema_version, load_markdown, load_toml, save_markdown, save_toml, walk_files,
+    walk_markdown_files,
+};
 use crate::transaction::{Posting, Transaction, TransactionStatus};
 use crate::workspace::{
-    ACCOUNTS_DIR, ASSERTIONS_DIR, PRICES_DIR, TRANSACTIONS_DIR, account_relative_path,
-    assertion_relative_path, price_relative_path, transaction_relative_path,
+    ACCOUNTS_DIR, ASSERTIONS_DIR, CONFIG_FILE, MARKDOWN_EXTENSION, PRICES_DIR, TOML_EXTENSION,
+    TRANSACTIONS_DIR, WORKSPACE_DIR, account_relative_path, assertion_relative_path,
+    price_relative_path, transaction_relative_path,
 };
 
 /// How many times to re-mint an id when the destination is already taken.
@@ -55,6 +60,14 @@ fn now() -> DateTime<FixedOffset> {
     Local::now().into()
 }
 
+/// Refuse to write into a ledger this build does not read: a record in the
+/// current layout would land in a ledger still in the old one.
+fn refuse_other_schema(root: &Path) -> Result<()> {
+    let config_path = root.join(WORKSPACE_DIR).join(CONFIG_FILE);
+    let config: Config = load_toml(&config_path)?;
+    check_schema_version(&config_path, config.schema_version)
+}
+
 fn refuse_existing(path: &Path) -> Result<()> {
     if path.exists() {
         return Err(Error::Validation(format!(
@@ -68,9 +81,9 @@ fn refuse_existing(path: &Path) -> Result<()> {
 /// Load just the accounts. Creates need them to resolve references and to
 /// check id uniqueness, and at household scale re-walking is free.
 fn load_accounts(root: &Path) -> Result<Vec<Account>> {
-    walk_toml_files(&root.join(ACCOUNTS_DIR))?
+    walk_markdown_files(&root.join(ACCOUNTS_DIR))?
         .iter()
-        .map(|p| load_toml::<Account>(p))
+        .map(|p| load_markdown::<Account>(p))
         .collect()
 }
 
@@ -81,7 +94,8 @@ fn load_accounts(root: &Path) -> Result<Vec<Account>> {
 /// only whether `dest` exists would let two records minted inside the same
 /// decisecond with dates in different months take the same id — their paths
 /// differ, so neither collision check would fire. `kind_dir` is walked to
-/// collect every id already taken across the kind.
+/// collect every id already taken across the kind; `extension` is the kind's
+/// file format.
 ///
 /// Time-ordering is an ergonomic nicety on top of uniqueness, so the first
 /// attempt uses the time-ordered generator, which is what a record written on
@@ -90,11 +104,16 @@ fn load_accounts(root: &Path) -> Result<Vec<Account>> {
 /// of this kind was minted in this same decisecond, and re-calling it would
 /// mint the identical id forever. Only a different generator can break that
 /// tie, so every attempt after the first is random.
-fn mint_free_id<F>(root: &Path, kind_dir: &str, relative: F) -> Result<(String, PathBuf)>
+fn mint_free_id<F>(
+    root: &Path,
+    kind_dir: &str,
+    extension: &str,
+    relative: F,
+) -> Result<(String, PathBuf)>
 where
     F: Fn(&str) -> PathBuf,
 {
-    let taken: HashSet<String> = walk_toml_files(&root.join(kind_dir))?
+    let taken: HashSet<String> = walk_files(&root.join(kind_dir), extension)?
         .iter()
         .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
         .collect();
@@ -160,7 +179,7 @@ fn resolve_postings(postings: Vec<Posting>, accounts: &[Account]) -> Result<Vec<
 /// refuse-to-overwrite check catches that on its own — but only while every
 /// account file sits at the path its name implies, and nothing enforces that:
 /// a hand edit, a half-applied rename or a sync artifact can leave an account
-/// named `Assets:Foo` in `accounts/Assets/Bar.toml`. So the name is also
+/// named `Assets:Foo` in `accounts/Assets/Bar.md`. So the name is also
 /// checked against the accounts already on disk.
 ///
 /// The id is random and is *not* in the path, so the refuse-to-overwrite
@@ -173,6 +192,7 @@ pub fn create_account(
     opened_at: NaiveDate,
     description: Option<String>,
 ) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
     let dest = root.join(account_relative_path(&name)?);
     refuse_existing(&dest)?;
 
@@ -202,11 +222,12 @@ pub fn create_account(
         closed_at: None,
         description,
     };
-    save_toml(&dest, &account)?;
+    save_markdown(&dest, &account)?;
     Ok((id, dest))
 }
 
 /// Write a new transaction, resolving and validating before touching disk.
+#[allow(clippy::too_many_arguments)]
 pub fn create_transaction(
     root: &Path,
     date: NaiveDate,
@@ -215,11 +236,13 @@ pub fn create_transaction(
     tags: Vec<String>,
     status: Option<TransactionStatus>,
     postings: Vec<Posting>,
+    comment: Option<String>,
 ) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
     let accounts = load_accounts(root)?;
     let postings = resolve_postings(postings, &accounts)?;
 
-    let (id, dest) = mint_free_id(root, TRANSACTIONS_DIR, |id| {
+    let (id, dest) = mint_free_id(root, TRANSACTIONS_DIR, MARKDOWN_EXTENSION, |id| {
         transaction_relative_path(date, id)
     })?;
     let timestamp = now();
@@ -233,9 +256,10 @@ pub fn create_transaction(
         created_at: timestamp,
         updated_at: timestamp,
         postings,
+        comment,
     };
     transaction.validate()?;
-    save_toml(&dest, &transaction)?;
+    save_markdown(&dest, &transaction)?;
     Ok((id, dest))
 }
 
@@ -247,6 +271,7 @@ pub fn create_assertion(
     date: NaiveDate,
     balances: Vec<Balance>,
 ) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
     if balances.is_empty() {
         return Err(Error::Validation(
             "assertion must declare at least one balance".into(),
@@ -272,7 +297,9 @@ pub fn create_assertion(
         }
     }
 
-    let (id, dest) = mint_free_id(root, ASSERTIONS_DIR, |id| assertion_relative_path(date, id))?;
+    let (id, dest) = mint_free_id(root, ASSERTIONS_DIR, TOML_EXTENSION, |id| {
+        assertion_relative_path(date, id)
+    })?;
     let timestamp = now();
     let assertion = Assertion {
         id: id.clone(),
@@ -296,12 +323,15 @@ pub fn create_price(
     rate: Decimal,
     source: Option<String>,
 ) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
     if base == quote {
         return Err(Error::Validation(format!(
             "price base and quote are both {base}"
         )));
     }
-    let (id, dest) = mint_free_id(root, PRICES_DIR, |id| price_relative_path(date, id))?;
+    let (id, dest) = mint_free_id(root, PRICES_DIR, TOML_EXTENSION, |id| {
+        price_relative_path(date, id)
+    })?;
     let timestamp = now();
     let entry = PriceEntry {
         id: id.clone(),
@@ -352,7 +382,7 @@ mod tests {
             std::fs::create_dir_all(occupied.parent().unwrap()).unwrap();
             std::fs::write(&occupied, "").unwrap();
 
-            let (minted, _) = mint_free_id(root, TRANSACTIONS_DIR, |id| {
+            let (minted, _) = mint_free_id(root, TRANSACTIONS_DIR, MARKDOWN_EXTENSION, |id| {
                 transaction_relative_path(june, id)
             })
             .expect("mint");

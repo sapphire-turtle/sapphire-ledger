@@ -34,6 +34,7 @@ fn transaction(postings: Vec<Posting>) -> Transaction {
         created_at: "2026-05-21T18:30:00+09:00".parse().unwrap(),
         updated_at: "2026-05-21T18:30:00+09:00".parse().unwrap(),
         postings,
+        comment: None,
     }
 }
 
