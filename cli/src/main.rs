@@ -15,19 +15,9 @@ fn main() -> Result<()> {
             sapphire_ledger_core::init_app_context(AppKind::Server);
             runtime()?.block_on(serve::run())
         }
+        // `mcp` among them: its stdout is the MCP stream, and the
+        // framework's console log goes to stderr (sapphire-framework#232).
         Some(Command::Framework(command)) => {
-            // The framework's console log goes to stdout (its `serve` wants
-            // journald to see it), but a one-shot verb's stdout is output —
-            // `external-device add` prints its token there, once. Install a
-            // stderr subscriber first: the framework's is first-writer-wins
-            // and steps aside. A stopgap until sapphire-framework#232.
-            let _ = tracing_subscriber::fmt()
-                .with_writer(std::io::stderr)
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::try_from_default_env()
-                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
-                )
-                .try_init();
             sapphire_ledger_core::init_app_context(AppKind::Cli);
             let code =
                 runtime()?.block_on(command.dispatch(serve::build_oneshot(), serve::VERSION))?;
@@ -73,10 +63,6 @@ fn main() -> Result<()> {
                 anyhow::bail!("validation failed with {} issue(s)", issues.len());
             }
         }
-        // stdout is the MCP stream here, so this path never initialises the
-        // framework's context (and with it its stdout log): the ledger's own
-        // verbs work on the files and need nothing from it.
-        Some(Command::Mcp { init }) => sapphire_ledger_mcp::run(cli.ledger_dir.as_deref(), init),
         Some(Command::Account(c)) => commands::account(c, &resolve_root(cli.ledger_dir)?),
         Some(Command::Tx(c)) => commands::tx(c, &resolve_root(cli.ledger_dir)?),
         Some(Command::Assertion(c)) => commands::assertion(c, &resolve_root(cli.ledger_dir)?),

@@ -21,7 +21,7 @@ pub struct Cli {
     /// Can also be set via the SAPPHIRE_LEDGER_DIR environment variable.
     ///
     /// Read by the ledger's own verbs only: `serve` serves the workspace the
-    /// server has selected (`workspace select`).
+    /// server has selected (`workspace select`), and `mcp` works on that one.
     #[arg(long, env = "SAPPHIRE_LEDGER_DIR", global = true, value_name = "DIR")]
     pub ledger_dir: Option<PathBuf>,
 
@@ -42,12 +42,6 @@ pub enum Command {
     },
     /// Load every record and report any validation issues
     Check,
-    /// Run the MCP server over stdio
-    Mcp {
-        /// Create the ledger if the target directory is not one yet
-        #[arg(long)]
-        init: bool,
-    },
     /// Manage the chart of accounts.
     #[command(subcommand)]
     Account(AccountCommand),
@@ -61,7 +55,7 @@ pub enum Command {
     #[command(subcommand)]
     Price(PriceCommand),
     /// The framework's verbs: serve, status, service, workspace, workgroup,
-    /// device, embedding, external-device.
+    /// device, embedding, external-device, mcp.
     #[command(flatten)]
     Framework(FrameworkCommand),
 }

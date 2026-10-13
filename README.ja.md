@@ -17,16 +17,16 @@ sapphire-framework上に構築された、ローカルファーストの複式�
 
 ```
 sapphire-ledger/
-├── cli/                     # 単一バイナリ sapphire-ledger：CLI、stdio MCP、アプリサーバー（HTTP経由の/mcp、同期）
+├── cli/                     # 単一バイナリ sapphire-ledger：CLI、アプリサーバー（同期、stdio と /mcp の MCP）
 ├── desktop/                 # デスクトップGUI（egui）。まだスキャフォールド
 └── crates/
     ├── sapphire-ledger-core/  # データモデル、TOMLパーサ/シリアライザ、検証、書き込みパス
-    └── sapphire-ledger-mcp/   # MCPサーバーロジック（ライブラリ。stdio と HTTP のトランスポート）
+    └── sapphire-ledger-mcp/   # ledger の MCP ツールとサーバー側メソッド（ライブラリ）
 ```
 
 ## ステータス
 
-データモデル、検証、書き込みパス、MCPサーバーは動作します。配布物は単一バイナリ`sapphire-ledger`で、ledger独自のコマンドと、[sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)のアプリサーバー用コマンド（`serve`、`status`、`service`、`workspace`、`workgroup`、`device`、`external-device`など）が同じ階層に並びます。MCPクライアントを`sapphire-ledger mcp`に向けてstdio経由でエントリの読み書き・記録をしたり、サーバー（`sapphire-ledger serve`、または引数なしの`sapphire-ledger`）を起動して、その`/mcp`にHTTP経由・外部デバイスのトークンで同じことができます（セットアップと認証モデルは[`docs/design.md`](docs/design.md#mcp-server)参照）。デスクトップGUIはまだスキャフォールドですが、CLIは書き込みに対応しました：
+データモデル、検証、書き込みパス、MCPサーバーは動作します。配布物は単一バイナリ`sapphire-ledger`で、ledger独自のコマンドと、[sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)のアプリサーバー用コマンド（`serve`、`status`、`service`、`workspace`、`workgroup`、`device`、`external-device`、`mcp`など）が同じ階層に並びます。サーバー（`sapphire-ledger serve`、または引数なしの`sapphire-ledger`）を起動した状態で、MCPクライアントを`sapphire-ledger mcp`に向けてstdio経由でエントリの読み書き・記録をしたり、`server.toml`で`/mcp`を有効にしてHTTP経由・外部デバイスのトークンで同じことができます。どちらもサーバーが選択中のワークスペースを対象にします（セットアップと認証モデルは[`docs/design.md`](docs/design.md#mcp-server)参照）。デスクトップGUIはまだスキャフォールドですが、CLIは書き込みに対応しました：
 
 ```
 sapphire-ledger account add Expenses:Food --type Expense

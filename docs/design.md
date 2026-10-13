@@ -369,34 +369,55 @@ non-goal here, not a stopgap for a slow walk that hasn't been measured yet.
 
 ```
 sapphire-ledger/
-├── cli/                     # `sapphire-ledger`, the one binary: CLI, stdio MCP, app server
+├── cli/                     # `sapphire-ledger`, the one binary: CLI, app server, `mcp`
 ├── desktop/                 # egui GUI (no MCP transport of its own)
 └── crates/
     ├── sapphire-ledger-core/  # data model, TOML I/O, validation, write path
-    └── sapphire-ledger-mcp/   # MCP server logic — LIBRARY only
+    └── sapphire-ledger-mcp/   # the ledger's MCP tools and server methods — LIBRARY only
 ```
 
 The MCP crate is intentionally **a library, not a binary**. `sapphire-ledger`
-embeds it twice: for the stdio transport (`sapphire-ledger mcp`), and, behind
-its `http-server` feature, for the `/mcp` its server mounts. See the [MCP
-server](#mcp-server) section for the details.
+registers its methods on the app server and hands its tools to the
+framework, which serves them on stdio (`sapphire-ledger mcp`) and at `/mcp`.
+See the [MCP server](#mcp-server) section for the details.
 
 Mobile builds (potentially with Dioxus) and a VS Code extension are
 deferred — see open follow-ups.
 
 ## MCP server
 
-Modelled on `sapphire-journal-mcp` as it stands today: a server struct holding
-an `Arc<Mutex<LedgerState>>`, tools declared with rmcp's `#[tool]` macro, and
-a stdio entry point. The HTTP transport is mounted by `sapphire-ledger serve`,
-behind the workgroup's external-device tokens — not by the desktop GUI, as
-this document originally planned; see [Server: `sapphire-ledger
-serve`](#server-sapphire-ledger-serve) below.
+Built on sapphire-framework's MCP (`sapphire_framework::mcp`, feature `mcp`).
+The ledger's tools do not open the ledger themselves: each one calls a
+`sapphire-ledger.<tool>` method on the running app server over IPC, the way
+the framework's own tools call `workspace.*`. So one set of tools serves both
+transports the framework provides, and both act on the workspace the server
+has selected:
+
+- **stdio** — `sapphire-ledger mcp`, the framework's subcommand, which an
+  agent launches as a child process. It dials the running server and never
+  starts one; a missing server is reported per call, and the next call tries
+  again.
+- **HTTP** — `/mcp` on the server's HTTP listener, behind the workgroup's
+  external-device tokens, when `server.toml` turns it on. See [Server:
+  `sapphire-ledger serve`](#server-sapphire-ledger-serve) below.
+
+The two halves live in `sapphire-ledger-mcp`:
+[`methods.rs`](../crates/sapphire-ledger-mcp/src/methods.rs) is the server
+side (`register` adds the methods to the app server's router; each runs
+against the current workspace's `LedgerState`), and
+[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs) is the rmcp handler
+(`LedgerTools`) the framework serves. The methods carry their own API version
+(`APP_API`), checked in the IPC handshake.
 
 ### Tools
 
-Nine tools, declared in [`server.rs`](../crates/sapphire-ledger-mcp/src/server.rs):
-five read, four write. Descriptions below are the tools' own
+Nine tools of the ledger's own, declared in
+[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): five read, four
+write. Beside them the framework's read-only tools (`status`,
+`workspace_show`, `workspace_search`, `workspace_read_file`,
+`workspace_list_dir`, `workgroup_show`, `device_list`). The framework's raw
+file writes are deliberately left out: a record written without the ledger's
+checks can leave the books unbalanced. Descriptions below are the tools' own
 `#[tool(description = ...)]` text, condensed to one line each.
 
 | Tool | Does |
@@ -413,23 +434,18 @@ five read, four write. Descriptions below are the tools' own
 
 ### Crate is library-only
 
-`sapphire-ledger-mcp` exposes the MCP server as reusable code. It does
-**not** produce a binary. There is no `sapphire-ledger-mcp` CLI to
+`sapphire-ledger-mcp` exposes the tools and the methods as reusable code. It
+does **not** produce a binary. There is no `sapphire-ledger-mcp` CLI to
 install separately.
 
-### CLI: stdio transport via `sapphire-ledger mcp`
+### stdio: `sapphire-ledger mcp`
 
-The CLI gains a `Mcp` subcommand that hands control to the library:
-
-```rust
-Command::Mcp { init } => sapphire_ledger_mcp::run(cli.ledger_dir.as_deref(), init)?,
-```
-
-`sapphire-ledger mcp [--init] [--ledger-dir DIR]` speaks the MCP protocol over
-stdio so it can be wired directly into Claude Desktop / Claude Code as
-an `mcp__sapphire-ledger__*` server. `--init` lets the agent create a
-fresh workspace if the target directory isn't one yet (no-op when it
-already is).
+`sapphire-ledger mcp` is the framework's `mcp` subcommand: it speaks MCP over
+stdio so it can be wired directly into Claude Desktop / Claude Code as an
+`mcp__sapphire-ledger__*` server. It serves the running server's selected
+workspace, so `--ledger-dir` does not apply, and the old `--init` (create a
+ledger where the agent stands) is gone: create one with `sapphire-ledger
+init` and `workspace select` it.
 
 ### Server: `sapphire-ledger serve`
 
@@ -439,10 +455,11 @@ runs — is the ledger's
 [sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)
 app server: the framework's `AppServer` (IPC socket, the current workspace,
 signals, `<data dir>/logs/app.log`) plus what is the ledger's own — sync
-through the host's `sapphire-bridge`, `/mcp` over HTTP, and the duplicate-id
-watch. The framework's other verbs (`status`, `service install|uninstall|status`,
+through the host's `sapphire-bridge`, the `sapphire-ledger.*` methods its
+MCP tools call, and the duplicate-id watch. The framework's other verbs
+(`status`, `service install|uninstall|status`,
 `workspace init|select|show|move|remove|map`, `workgroup …`, `device …`,
-`embedding …`, `external-device …`) are flattened into the same command line
+`embedding …`, `external-device …`, `mcp`) are flattened into the same command line
 beside the ledger's own. The original reasoning for `/mcp` lives in
 [`docs/superpowers/specs/2026-09-02-ledger-server-design.md`](superpowers/specs/2026-09-02-ledger-server-design.md);
 its key-file and user/device sections were superseded by sapphire-framework
@@ -451,50 +468,56 @@ its key-file and user/device sections were superseded by sapphire-framework
 **The server serves one workspace: the one selected.** `--ledger-dir` is for
 the ledger's own verbs; the server serves whatever `workspace select` (or
 `workspace init`, `workspace map`) last chose, remembered in
-`<config dir>/workspace.toml` across restarts. `/mcp` and the watch follow a
-switch without a restart.
+`<config dir>/workspace.toml` across restarts. The MCP tools and the watch
+follow a switch without a restart.
 
 **A missing bridge is not fatal.** With no `sapphire-bridge` running the
 server starts without sync and says so in its log; sync starts with the next
 server start after the bridge is up. Any other bridge failure — another
 version, say — stops the start.
 
-**The ledger's own verbs still work on the files directly.** `init`, `check`,
-`mcp` and the write commands do not go through the server: the ledger keeps
+**The ledger's own verbs still work on the files directly.** `init`, `check`
+and the write commands do not go through the server: the ledger keeps
 no cache a second process could collide on, so they need nothing from it. A
 running server notices their writes the way it notices a human's editor.
 Routing them over IPC instead is a later step.
 
 **HTTP settings live in `<config dir>/server.toml`**, not in flags, because
-the service manager starts the binary as plain `serve`:
+the service manager starts the binary as plain `serve`. The file is the
+framework's (`ServerConfig`), shared by every sapphire app:
 
 ```toml
 [http]
-enabled = true                 # false: no /mcp at all
-addr = "127.0.0.1:3173"
+listen = "127.0.0.1:3173"      # the ledger's default when omitted
 allowed_hosts = ["ledger.example.net"]
+
+[mcp]
+http = true                    # serve /mcp; off by default
 ```
 
-A missing file is these defaults; an unknown key is an error, so a typo
-cannot quietly fall back to loopback.
+A missing file is all defaults — `/mcp` **off**; an unknown key is an error,
+so a typo cannot quietly fall back to loopback. The ledger's earlier format
+(`[http] enabled` / `addr`) is one such error: rename `addr` to `listen` and
+replace `enabled = true` with `[mcp] http = true`. A listener that cannot
+bind is logged and does not stop the server.
 
-**The `Host` allowlist is a parameter, not a default.** rmcp refuses any
-request whose `Host` header isn't on an allowlist, and its own default is
-loopback-only. `mcp_router` takes the extra hostnames as an argument and
-always adds loopback on top of them — an empty list from the caller is never
-handed to rmcp, which would read that as "allow every host" instead of
-"loopback only". `addr` (default `127.0.0.1:3173`) is what widens the
-bind, and `allowed_hosts` is what widens this list. Bound beyond loopback
-with no `allowed_hosts` at all, `sapphire-ledger serve` **refuses to start**: a wide bind with an empty allowlist would 403 every
-request, which is useless rather than dangerous, and would present as a
-client bug rather than a configuration mistake.
+**The `Host` allowlist is never empty.** rmcp refuses any request whose
+`Host` header isn't on an allowlist, and its own default is loopback-only.
+The framework always adds loopback on top of `allowed_hosts`, so an empty
+list is never handed to rmcp, which would read that as "allow every host"
+instead of "loopback only". `listen` is what widens the bind, and
+`allowed_hosts` is what widens this list. With `/mcp` on and bound beyond
+loopback with no `allowed_hosts` at all, `sapphire-ledger serve` **refuses
+to start**: a wide bind with an empty allowlist would 403 every request,
+which is useless rather than dangerous, and would present as a client bug
+rather than a configuration mistake.
 
 **TLS is out of scope.** `/mcp` is plain HTTP, and has
 no plans to speak anything else, so any bind past loopback puts every
 device's bearer token on the wire in cleartext. Put it behind a reverse
 proxy that terminates TLS, or reach it over a network that is already
 encrypted (a WireGuard or Tailscale interface, say), rather than exposing
-`addr` directly.
+`listen` directly.
 
 **Clients are the workgroup's external devices.** A bearer token belongs to
 an external device in the workgroup's ledger (`external_devices/<id>.toml`,
@@ -537,21 +560,15 @@ but no record schema has the field yet.
 
 ### Library API shape
 
-Mirroring the journal:
-
-- A public `SapphireLedgerServer` type implementing the rmcp server
-  trait.
-- `SapphireLedgerServer::from_shared(state)` constructor so multiple
-  concurrent HTTP sessions can share a single in-memory workspace
-  state without each rebuilding it.
-- Shared setup helpers (`prepare_state`, mirroring the journal's naming)
-  factored out of the stdio entry point so both transports reuse them — the
-  only divergence in *building the ledger state* is the rmcp transport
-  wiring itself. (Beyond state setup, the two paths do differ: `serve`
-  opens the server's current workspace per MCP session through
-  `mcp_router_with` rather than threading `--init` through, and it
-  additionally wraps the router in `protect()` and spawns the duplicate-id
-  watch.)
+- `sapphire_ledger_mcp::register(router, source)` adds the ledger's methods
+  to the app server's IPC router; `source` resolves the current workspace's
+  `LedgerState` per call (`serve::CurrentLedger`), opened once per root.
+- `LedgerMethods` is one call's work over an `Arc<Mutex<LedgerState>>`; its
+  unit tests pin the ledger's behaviour without a server.
+- `sapphire_ledger_mcp::service()` is the `McpService` handed to
+  `AppServer::mcp`, building a `LedgerTools` per session.
+- `serve::build()` is the whole server minus the bridge, which the
+  integration test (`cli/tests/mcp_tools.rs`) runs and drives over IPC.
 
 ## Licensing
 
@@ -580,10 +597,11 @@ permissive until there is a reason to tighten it.
 - ✅ Price-log records (storage; conversion and reporting deferred).
 - ✅ `core::ops` write path.
 - ✅ Framework dependency (`AppContext`) + `LedgerState` session object.
-- ✅ MCP server over stdio: read and write tools, via `sapphire-ledger mcp`.
 - ✅ One binary (#19): `sapphire-ledger serve` is the framework app server,
-  with `/mcp` over HTTP behind external-device tokens and a duplicate-id
-  watch; the framework's verbs sit beside the ledger's.
+  with a duplicate-id watch; the framework's verbs sit beside the ledger's.
+- ✅ MCP on the framework's MCP (sapphire-framework#233): the ledger's tools
+  call the server over IPC, served on stdio (`sapphire-ledger mcp`) and at
+  `/mcp` behind external-device tokens.
 - 🚧 Sync through the bridge is wired but not yet exercised end to end; the
   ledger's own verbs still write the files directly rather than over IPC.
 - ✅ CLI write commands (`account add`, `tx add`, `assertion add`, `price add`, `tx list`).

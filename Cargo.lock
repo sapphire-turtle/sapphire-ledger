@@ -3915,7 +3915,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d1f571c72940a19d9532fe52dbea8bc9912bf1d766c2970bb824056b86f3f59"
 dependencies = [
  "async-trait",
- "base64",
  "bytes",
  "chrono",
  "futures",
@@ -4071,12 +4070,11 @@ dependencies = [
 [[package]]
 name = "sapphire-framework"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58a5310abeb94742d9128178baa2b88074280391908fbebe2d494ca91bb2139a"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "sapphire-framework-backend",
  "sapphire-framework-ipc",
- "sapphire-framework-keys",
+ "sapphire-framework-mcp",
  "sapphire-framework-server",
  "sapphire-framework-workspace",
 ]
@@ -4084,8 +4082,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-backend"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b19da174d4dc061114110fa766f8c006ff2a02c28f78c1cae2eab1198d361883"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4104,8 +4101,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-bridge-api"
 version = "2.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "609a7098a9959db900727f3b674865031c4aa4c0196948c5cbf0564b0a0b1eac"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "clap",
  "grain-id",
@@ -4116,8 +4112,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-bridge-client"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca00d192104cac1d5184745f3cffc401ddfa85fe1010c76d5795f0377c30067b"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "sapphire-framework-bridge-api",
  "sapphire-framework-ipc",
@@ -4129,8 +4124,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-ipc"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c16cec3abbdfebe677bd6aa792cdb46c7f4f5dce86210d4d6627b3293fe579ed"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "dirs",
  "libc",
@@ -4146,8 +4140,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-keys"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "043b398869e0e9ab3e44b634d7fb19d16eac06424499bc3062dd33acf8be5112"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "async-trait",
  "axum",
@@ -4161,10 +4154,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "sapphire-framework-mcp"
+version = "0.16.0"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
+dependencies = [
+ "axum",
+ "rmcp",
+ "sapphire-framework-bridge-client",
+ "sapphire-framework-ipc",
+ "sapphire-framework-server-api",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "sapphire-framework-retrieve"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25119bd7cad1178f18e6ad9301b3372d0bbebaf702d2328df3ef6fe186c76d96"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "redb",
  "serde",
@@ -4177,9 +4188,9 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-server"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6486f6c74f182a25bdd2a1db32b0acd52151e984c81cb771213d5653b3f14f12"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
+ "axum",
  "clap",
  "grain-id",
  "indexmap",
@@ -4188,6 +4199,8 @@ dependencies = [
  "sapphire-framework-bridge-api",
  "sapphire-framework-bridge-client",
  "sapphire-framework-ipc",
+ "sapphire-framework-keys",
+ "sapphire-framework-mcp",
  "sapphire-framework-service",
  "sapphire-framework-session",
  "sapphire-framework-sync",
@@ -4196,6 +4209,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "toml",
  "tracing",
 ]
@@ -4203,8 +4217,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-server-api"
 version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a76503762b4af57ab5d846a9f8e053652abaeecdfaaebae689406c8dc752f49"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "grain-id",
  "serde",
@@ -4213,8 +4226,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-service"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f5dc7d84408c7a0f64a7e9bc48ccc81328e8828c06713e0483ea1200980d721"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "clap",
  "libc",
@@ -4226,8 +4238,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-session"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a1cc4c4804cfa1b53690c285c7274c37394cb1418440e2ecaeb74226c61a487"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "grain-id",
  "sapphire-framework-sync",
@@ -4241,8 +4252,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-sync"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74a98a0bf13e60407693aa5446aa36b94a6a97107daa1321adbe8fa393032211"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "grain-id",
  "ignore",
@@ -4259,8 +4269,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-track"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f236db800dab4ac5c42402d673c9f76019a4e76c14169352633f15296eac7fe9"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "redb",
  "thiserror 2.0.18",
@@ -4270,8 +4279,7 @@ dependencies = [
 [[package]]
 name = "sapphire-framework-workspace"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90dbc20c3197478d7821b6c01d8a281493f70bc079d25b30aa95c5d541f13d21"
+source = "git+https://github.com/sapphire-turtle/sapphire-framework?branch=feat%2Fmcp-common#b0bc5e170342a3970676a47554460fc3d2cb559e"
 dependencies = [
  "chrono",
  "clap",
@@ -4302,23 +4310,18 @@ name = "sapphire-ledger"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
- "axum",
  "chrono",
  "clap",
- "http-body-util",
  "sapphire-framework",
  "sapphire-framework-bridge-client",
  "sapphire-ledger-core",
  "sapphire-ledger-mcp",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
- "tokio-util",
  "toml",
- "tower",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -4350,21 +4353,17 @@ name = "sapphire-ledger-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum",
  "chrono",
- "http-body-util",
  "rmcp",
  "rust_decimal",
+ "sapphire-framework",
  "sapphire-ledger-core",
  "schemars",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
- "tokio-util",
- "tower",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

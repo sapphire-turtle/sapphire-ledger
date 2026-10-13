@@ -30,6 +30,7 @@ fn the_framework_verbs_sit_at_the_top_level() {
         &["workgroup", "list"],
         &["device", "list"],
         &["external-device", "list"],
+        &["mcp"],
     ] {
         assert!(
             matches!(parse(args).command, Some(Command::Framework(_))),
@@ -41,10 +42,6 @@ fn the_framework_verbs_sit_at_the_top_level() {
 #[test]
 fn the_ledger_verbs_still_parse_beside_them() {
     assert!(matches!(parse(&["check"]).command, Some(Command::Check)));
-    assert!(matches!(
-        parse(&["mcp", "--init"]).command,
-        Some(Command::Mcp { init: true })
-    ));
     assert!(matches!(
         parse(&["--ledger-dir", "/tmp/l", "tx", "list"]).command,
         Some(Command::Tx(_))
