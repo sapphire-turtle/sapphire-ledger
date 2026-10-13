@@ -16,29 +16,30 @@ edition = "2024"
 
 [workspace.dependencies]
 anyhow = "1"
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 grain-id = { version = "0.16", features = ["serde", "schemars"] }
 indexmap = { version = "2", features = ["serde"] }
-rmcp = { version = "1.5", features = ["server", "transport-io"] }
+# The MCP macros name `rmcp` directly, so it is the version sapphire-framework
+# builds on (`sapphire_framework::mcp::rmcp`).
+rmcp = { version = "1.8", default-features = false, features = ["server", "macros"] }
 rust_decimal = { version = "1", features = ["serde", "serde-with-str"] }
 # The facade: `server` is the app server (AppServer, FrameworkCommand,
-# SyncRuntime), `ipc` its transport, `keys` the bearer check on `/mcp`.
-# `redb-store` must be named: with default features off the framework's
-# persistent store silently falls back to in-memory otherwise.
-sapphire-framework = { version = "0.16.0", default-features = false }
+# SyncRuntime), `ipc` its transport, `mcp` the shared MCP tools with the `mcp`
+# subcommand and `/mcp` over HTTP. `redb-store` must be named: with default
+# features off the framework's persistent store silently falls back to
+# in-memory otherwise.
+sapphire-framework = { version = "0.17.0", default-features = false }
 # The bridge client an app server connects with. The facade's `bridge` module
 # is the daemon side, so the client is a direct dependency at the same release.
-sapphire-bridge-client = { package = "sapphire-framework-bridge-client", version = "0.16.0" }
-sapphire-workspace = { package = "sapphire-framework-workspace", version = "0.16.0", default-features = false }
+sapphire-bridge-client = { package = "sapphire-framework-bridge-client", version = "0.17.0" }
+sapphire-workspace = { package = "sapphire-framework-workspace", version = "0.17.0", default-features = false }
 schemars = "1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1" }
-tokio-util = "0.7"
 toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3"

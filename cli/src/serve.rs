@@ -8,35 +8,81 @@
 //! - **sync**, through the host's `sapphire-bridge` when one is running. A
 //!   bridge that is not running is not fatal: the server serves its
 //!   workspace without sync, and picks the bridge up on its next start.
-//! - **`/mcp` over HTTP** for remote clients ([`crate::http`]), following the
-//!   server's current workspace.
+//! - **the ledger's methods** (`sapphire-ledger.*`), which its MCP tools call:
+//!   the framework serves those tools on stdio (`sapphire-ledger mcp`) and, when
+//!   `server.toml` turns it on, at `/mcp` on the server's HTTP listener.
 //! - **the duplicate-id watch** ([`crate::watch`]) over that same workspace.
 
 use std::io;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use sapphire_bridge_client::BridgeClient;
 use sapphire_framework::ipc::{self, ManagedBy};
-use sapphire_framework::server::{AppServer, StatusRow, SyncRuntime, WorkspaceHost};
+use sapphire_framework::server::{
+    AppServer, SERVER_CONFIG_FILE, ServerConfig, StatusRow, SyncRuntime, WorkspaceHost,
+};
 use sapphire_ledger_core::{LEDGER_CTX, LedgerState};
-use tokio_util::sync::CancellationToken;
-
-use crate::http::{self, ServerConfig};
 
 /// This binary's version, reported in every handshake.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The server the framework's one-shot verbs dispatch against: nothing
-/// mounted.
+/// Where the HTTP listener binds unless `server.toml`'s `[http] listen` says
+/// otherwise: loopback, on the port this app has used since #16.
+pub const DEFAULT_HTTP_ADDR: &str = "127.0.0.1:3173";
+
+/// The server the framework's one-shot verbs dispatch against: the ledger's
+/// MCP tools and API version, nothing mounted.
 ///
 /// `status`, `service`, `workspace`, `workgroup`, `device`, `embedding` and
 /// `external-device` read only the app name and the service spec from it and
-/// talk to a *running* server (or the bridge) over IPC themselves. Opening a
+/// talk to a *running* server (or the bridge) over IPC themselves; `mcp`
+/// serves the ledger's tools on stdio, dialling that server. Opening a
 /// bridge here would make `status` on a host without one fail with a bridge
 /// error instead of the framework's "no server is running".
 pub fn build_oneshot() -> AppServer {
     AppServer::new(&LEDGER_CTX, VERSION)
+        .app_api(sapphire_ledger_mcp::APP_API)
+        .mcp(sapphire_ledger_mcp::service())
+}
+
+/// The ledger's server, without sync: the framework's server with the
+/// ledger's methods, its MCP tools, and its HTTP port.
+///
+/// [`run`] adds the bridge; a test runs this as it is.
+pub fn build() -> AppServer {
+    let server = build_oneshot().http_listen(default_http_addr());
+    let ledger = Arc::new(CurrentLedger::new(Arc::clone(server.host())));
+    server
+        .extend(move |router| sapphire_ledger_mcp::register(router, Arc::new(move || ledger.get())))
+}
+
+fn default_http_addr() -> SocketAddr {
+    DEFAULT_HTTP_ADDR
+        .parse()
+        .expect("the default address parses")
+}
+
+/// Refuse a configuration that would serve 403 to every `/mcp` client.
+///
+/// rmcp's `Host` allowlist is loopback-only unless widened. Binding beyond
+/// loopback without naming a host is not dangerous — it is useless, and it
+/// presents as a client bug. Failing here turns that into an obvious
+/// configuration error.
+pub fn check_exposure(addr: SocketAddr, allowed_hosts: &[String]) -> anyhow::Result<()> {
+    if addr.ip().is_loopback() {
+        return Ok(());
+    }
+    if allowed_hosts.iter().any(|h| !h.trim().is_empty()) {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "binding to {addr} without allowed_hosts would refuse every request: \
+         rmcp's Host allowlist stays loopback-only, so a client reaching this \
+         server by any other name gets 403. List each name clients use in \
+         [http] allowed_hosts of {SERVER_CONFIG_FILE}, or bind to loopback."
+    )
 }
 
 /// The ledger the server's current workspace holds, opened once per root.
@@ -85,9 +131,15 @@ impl CurrentLedger {
 
 /// Run the server until SIGTERM or SIGINT.
 pub async fn run() -> anyhow::Result<()> {
-    let config = ServerConfig::load(&ServerConfig::path())?;
+    // The framework reads `server.toml` again when it starts; this read is
+    // for what the ledger adds on top: the exposure check and the status row.
+    let config = ServerConfig::load_for_app(&LEDGER_CTX)?;
+    let http_addr = config.http.listen.unwrap_or_else(default_http_addr);
+    if config.mcp.http {
+        check_exposure(http_addr, &config.http.allowed_hosts)?;
+    }
 
-    let mut server = AppServer::new(&LEDGER_CTX, VERSION);
+    let mut server = build();
     match BridgeClient::connect(LEDGER_CTX.app_name, VERSION).await {
         Ok(bridge) => {
             let runtime = SyncRuntime::new(
@@ -108,10 +160,8 @@ pub async fn run() -> anyhow::Result<()> {
     }
 
     let host = Arc::clone(server.host());
-    let ledger = Arc::new(CurrentLedger::new(Arc::clone(&host)));
-
-    let mcp_row = if config.http.enabled {
-        format!("http://{}/mcp", config.http.addr)
+    let mcp_row = if config.mcp.http {
+        format!("http://{http_addr}/mcp")
     } else {
         "off".to_owned()
     };
@@ -122,21 +172,8 @@ pub async fn run() -> anyhow::Result<()> {
         }]
     }));
 
-    let cancel = CancellationToken::new();
-    let http = if config.http.enabled {
-        let source = Arc::clone(&ledger);
-        Some(http::serve(&config.http, Arc::new(move || source.get()), cancel.clone()).await?)
-    } else {
-        None
-    };
     let watch = crate::watch::spawn(move || host.root());
-
     let result = server.run().await;
-
-    cancel.cancel();
-    if let Some(http) = http {
-        let _ = http.await;
-    }
     watch.abort();
     Ok(result?)
 }

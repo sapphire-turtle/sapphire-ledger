@@ -26,22 +26,17 @@ redb-store = [
 
 [dependencies]
 sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
-sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false, features = ["http-server"] }
-sapphire-framework = { workspace = true, features = ["server", "ipc", "keys"] }
+sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false }
+sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp"] }
 sapphire-bridge-client.workspace = true
 anyhow.workspace = true
-axum.workspace = true
 chrono.workspace = true
 clap.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "time"] }
-tokio-util.workspace = true
 toml.workspace = true
 tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
-async-trait = "0.1"
-http-body-util = "0.1"
+serde_json.workspace = true
 tempfile.workspace = true
-tower = { version = "0.5", features = ["util"] }

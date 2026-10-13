@@ -1,54 +1,163 @@
-//! MCP server logic for sapphire-ledger.
+//! The ledger's methods on its app server: what the MCP tools call.
 //!
-//! Modelled on `sapphire-journal-mcp`: one server struct holding an
-//! `Arc<Mutex<LedgerState>>`, tools declared with rmcp's `#[tool]` macro, and
-//! a stdio entry point. The HTTP transport is in [`crate::http`].
+//! Every tool reaches the ledger the way the framework's own tools reach the
+//! workspace — over the app server's IPC, as `sapphire-ledger.<tool>` — so one
+//! implementation serves the `mcp` subcommand (stdio, dialling the running
+//! server) and `/mcp` on the server's HTTP listener alike. [`register`] adds
+//! the methods to the server's router; [`crate::tools`] is the other end.
+//!
+//! [`LedgerMethods`] is the ledger side of one call: an
+//! `Arc<Mutex<LedgerState>>`, and a function per method returning the text the
+//! agent reads.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
-use rmcp::{
-    ServerHandler, ServiceExt,
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::*,
-    schemars, tool, tool_router,
-    transport::stdio,
-};
+use sapphire_framework::ipc::{RequestCtx, Router, RpcError};
 use sapphire_ledger_core::{LedgerState, ops};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-/// Called after a tool writes, with every path the write touched.
+/// Called after a method writes, with every path the write touched.
 ///
 /// One call is one batch: a write producing several files reports them
 /// together, so a syncing receiver never sees half of a change.
 pub type WriteObserver = Arc<dyn Fn(&[PathBuf]) + Send + Sync>;
 
+/// Where a call finds its ledger: asked once per call.
+///
+/// The app server's ledger is whatever workspace it has selected, which
+/// `workspace select` can change underneath it; an error refuses the call.
+pub type StateSource = Arc<dyn Fn() -> std::io::Result<Arc<Mutex<LedgerState>>> + Send + Sync>;
+
+/// The ledger's methods, `sapphire-ledger.<tool>`.
+pub mod names {
+    pub const LIST_ACCOUNTS: &str = "sapphire-ledger.list_accounts";
+    pub const GET_TRANSACTION: &str = "sapphire-ledger.get_transaction";
+    pub const QUERY_POSTINGS: &str = "sapphire-ledger.query_postings";
+    pub const QUERY_PRICES: &str = "sapphire-ledger.query_prices";
+    pub const VALIDATE_WORKSPACE: &str = "sapphire-ledger.validate_workspace";
+    pub const ADD_ACCOUNT: &str = "sapphire-ledger.add_account";
+    pub const ADD_TRANSACTION: &str = "sapphire-ledger.add_transaction";
+    pub const ADD_ASSERTION: &str = "sapphire-ledger.add_assertion";
+    pub const ADD_PRICE: &str = "sapphire-ledger.add_price";
+}
+
+/// The version of the methods in [`names`], reported in the IPC handshake.
+///
+/// Bump it when a method's parameters or meaning change incompatibly: a
+/// client built against another version is refused at connect time rather
+/// than mid-call.
+pub const APP_API: u32 = 1;
+
+/// Add the ledger's methods to the app server's `router`, each resolving the
+/// ledger through `source` when it is called.
+pub fn register(router: Router, source: StateSource) -> Router {
+    let router = route(
+        router,
+        names::LIST_ACCOUNTS,
+        &source,
+        LedgerMethods::list_accounts,
+    );
+    let router = route(
+        router,
+        names::GET_TRANSACTION,
+        &source,
+        LedgerMethods::get_transaction,
+    );
+    let router = route(
+        router,
+        names::QUERY_POSTINGS,
+        &source,
+        LedgerMethods::query_postings,
+    );
+    let router = route(
+        router,
+        names::QUERY_PRICES,
+        &source,
+        LedgerMethods::query_prices,
+    );
+    let router = route(
+        router,
+        names::VALIDATE_WORKSPACE,
+        &source,
+        LedgerMethods::validate_workspace,
+    );
+    let router = route(
+        router,
+        names::ADD_ACCOUNT,
+        &source,
+        LedgerMethods::add_account,
+    );
+    let router = route(
+        router,
+        names::ADD_TRANSACTION,
+        &source,
+        LedgerMethods::add_transaction,
+    );
+    let router = route(
+        router,
+        names::ADD_ASSERTION,
+        &source,
+        LedgerMethods::add_assertion,
+    );
+    route(router, names::ADD_PRICE, &source, LedgerMethods::add_price)
+}
+
+/// Register one method: parse its parameters, then run `method` against the
+/// current ledger on the blocking pool — the ledger is files and a std mutex.
+///
+/// The method's text is the result; its error text is the RPC error's message,
+/// which the tool hands to the agent as it is.
+fn route<P>(
+    router: Router,
+    name: &str,
+    source: &StateSource,
+    method: fn(&LedgerMethods, P) -> Result<String, String>,
+) -> Router
+where
+    P: DeserializeOwned + Send + 'static,
+{
+    let source = Arc::clone(source);
+    router.method(name, move |ctx: RequestCtx| {
+        let source = Arc::clone(&source);
+        async move {
+            let params: P = serde_json::from_value(ctx.params)
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            let text = tokio::task::spawn_blocking(move || {
+                let state = source().map_err(|e| e.to_string())?;
+                method(&LedgerMethods::from_shared(state), params)
+            })
+            .await
+            .map_err(|e| RpcError::internal(format!("the ledger method panicked: {e}")))?
+            .map_err(RpcError::internal)?;
+            Ok(serde_json::Value::String(text))
+        }
+    })
+}
+
 #[derive(Clone)]
-pub struct SapphireLedgerServer {
+pub struct LedgerMethods {
     state: Arc<Mutex<LedgerState>>,
-    tool_router: ToolRouter<Self>,
     write_observer: Option<WriteObserver>,
 }
 
-impl std::fmt::Debug for SapphireLedgerServer {
+impl std::fmt::Debug for LedgerMethods {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SapphireLedgerServer")
-            .finish_non_exhaustive()
+        f.debug_struct("LedgerMethods").finish_non_exhaustive()
     }
 }
 
-impl SapphireLedgerServer {
+impl LedgerMethods {
     pub fn new(state: LedgerState) -> Self {
         Self::from_shared(Arc::new(Mutex::new(state)))
     }
 
-    /// Build a server sharing an existing state handle. The HTTP transport
-    /// spawns one server per session, but all of them must see one ledger.
+    /// Build over an existing state handle: every call on the server shares
+    /// one ledger.
     pub fn from_shared(state: Arc<Mutex<LedgerState>>) -> Self {
         Self {
             state,
-            tool_router: Self::tool_router(),
             write_observer: None,
         }
     }
@@ -57,12 +166,11 @@ impl SapphireLedgerServer {
         Arc::clone(&self.state)
     }
 
-    /// Set where post-write notifications go. Unused by the stdio transport.
+    /// Set where post-write notifications go.
     pub fn with_write_observer(mut self, observer: WriteObserver) -> Self {
         self.write_observer = Some(observer);
         self
     }
-
     fn notify_write(&self, paths: &[PathBuf]) {
         if let Some(observer) = &self.write_observer {
             observer(paths);
@@ -91,16 +199,16 @@ impl SapphireLedgerServer {
 // ── parameter structs ─────────────────────────────────────────────────────────
 
 /// Explicit empty parameter object for zero-argument tools.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EmptyParams {}
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetTransactionParams {
     /// The transaction's 7-character id.
     pub id: String,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct QueryPostingsParams {
     /// Account id, or account name. Either is accepted.
     pub account: Option<String>,
@@ -112,7 +220,7 @@ pub struct QueryPostingsParams {
     pub date_to: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct QueryPricesParams {
     pub base: Option<String>,
     pub quote: Option<String>,
@@ -125,7 +233,7 @@ fn parse_date(raw: &str) -> anyhow::Result<chrono::NaiveDate> {
         .with_context(|| format!("not a YYYY-MM-DD date: {raw}"))
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddAccountParams {
     /// Colon-separated account name, e.g. `Assets:Cash:JPY`.
     pub name: String,
@@ -141,7 +249,7 @@ pub struct AddAccountParams {
 }
 
 /// One side of a transaction. Amounts are strings so decimals survive JSON.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PostingParam {
     /// Account id or account name — either is accepted, and the account must
     /// already exist. The stored record always keeps the id.
@@ -157,7 +265,7 @@ pub struct PostingParam {
     pub memo: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddTransactionParams {
     /// `YYYY-MM-DD`.
     pub date: String,
@@ -172,14 +280,14 @@ pub struct AddTransactionParams {
     pub postings: Vec<PostingParam>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BalanceParam {
     /// Decimal amount as a string.
     pub amount: String,
     pub currency: String,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddAssertionParams {
     /// Account id or account name.
     pub account: String,
@@ -188,7 +296,7 @@ pub struct AddAssertionParams {
     pub balances: Vec<BalanceParam>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddPriceParams {
     pub date: String,
     /// Base currency, e.g. `USD`.
@@ -304,28 +412,24 @@ fn build_posting(
 }
 
 /// One posting flattened with its transaction's context, which is what a
-/// caller asking "what happened to this account" actually wants.
-#[derive(serde::Serialize)]
-struct PostingHit {
-    transaction_id: String,
-    date: chrono::NaiveDate,
-    narration: String,
-    account_id: Option<String>,
-    account_name: Option<String>,
-    amount: String,
-    currency: String,
+/// caller asking "what happened to this account" actually wants:
+/// `query_postings` answers with a JSON array of these.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostingHit {
+    pub transaction_id: String,
+    pub date: chrono::NaiveDate,
+    pub narration: String,
+    pub account_id: Option<String>,
+    pub account_name: Option<String>,
+    /// Signed decimal, as a string so it survives JSON.
+    pub amount: String,
+    pub currency: String,
 }
 
-// ── tools ─────────────────────────────────────────────────────────────────────
+// ── methods ─────────────────────────────────────────────────────────────────────
 
-#[tool_router]
-impl SapphireLedgerServer {
-    #[tool(
-        description = "List every account with its id, name, type, allowed currencies \
-        and open date. The id is the stable handle: it survives a rename, and other \
-        tools accept it wherever they accept a name."
-    )]
-    fn list_accounts(&self, Parameters(_): Parameters<EmptyParams>) -> Result<String, String> {
+impl LedgerMethods {
+    fn list_accounts(&self, _: EmptyParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let guard = self.lock_state();
             Ok(serde_json::to_string_pretty(&guard.workspace().accounts)?)
@@ -333,11 +437,7 @@ impl SapphireLedgerServer {
         .map_err(render_error)
     }
 
-    #[tool(description = "Show one transaction, with all of its postings, by id.")]
-    fn get_transaction(
-        &self,
-        Parameters(p): Parameters<GetTransactionParams>,
-    ) -> Result<String, String> {
+    fn get_transaction(&self, p: GetTransactionParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let guard = self.lock_state();
             let found = guard
@@ -351,15 +451,7 @@ impl SapphireLedgerServer {
         .map_err(render_error)
     }
 
-    #[tool(
-        description = "Find postings, optionally filtered by account, currency and date \
-        range. `account` matches either an account id or an account name. Each result \
-        carries its transaction's id, date and narration."
-    )]
-    fn query_postings(
-        &self,
-        Parameters(p): Parameters<QueryPostingsParams>,
-    ) -> Result<String, String> {
+    fn query_postings(&self, p: QueryPostingsParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let from = p.date_from.as_deref().map(parse_date).transpose()?;
             let to = p.date_to.as_deref().map(parse_date).transpose()?;
@@ -430,11 +522,7 @@ impl SapphireLedgerServer {
         .map_err(render_error)
     }
 
-    #[tool(
-        description = "Find price-log entries, optionally filtered by base, quote and \
-        date range."
-    )]
-    fn query_prices(&self, Parameters(p): Parameters<QueryPricesParams>) -> Result<String, String> {
+    fn query_prices(&self, p: QueryPricesParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let from = p.date_from.as_deref().map(parse_date).transpose()?;
             let to = p.date_to.as_deref().map(parse_date).transpose()?;
@@ -455,12 +543,7 @@ impl SapphireLedgerServer {
         .map_err(render_error)
     }
 
-    #[tool(
-        description = "Re-read the ledger from disk and report every validation issue. \
-        Returns an empty array when the ledger is consistent. A posting whose stored \
-        account_name is out of date is NOT an issue -- the account_id is what counts."
-    )]
-    fn validate_workspace(&self, Parameters(_): Parameters<EmptyParams>) -> Result<String, String> {
+    fn validate_workspace(&self, _: EmptyParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let mut guard = self.lock_state();
             guard.reload()?;
@@ -469,11 +552,7 @@ impl SapphireLedgerServer {
         .map_err(render_error)
     }
 
-    #[tool(
-        description = "Create an account. Fails if one with that name already exists. \
-        Every account a posting names must be created first. Returns the new account's id."
-    )]
-    fn add_account(&self, Parameters(p): Parameters<AddAccountParams>) -> Result<String, String> {
+    fn add_account(&self, p: AddAccountParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let account_type = parse_account_type(&p.account_type)?;
             let opened_at = parse_date(&p.opened_at)?;
@@ -497,14 +576,7 @@ impl SapphireLedgerServer {
         .map_err(render_error)
     }
 
-    #[tool(
-        description = "Record a transaction. Postings must sum to zero per currency, and \
-        every account named must already exist. Nothing is written if validation fails."
-    )]
-    fn add_transaction(
-        &self,
-        Parameters(p): Parameters<AddTransactionParams>,
-    ) -> Result<String, String> {
+    fn add_transaction(&self, p: AddTransactionParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let date = parse_date(&p.date)?;
             let status = p.status.as_deref().map(parse_status).transpose()?;
@@ -539,14 +611,7 @@ impl SapphireLedgerServer {
         .map_err(render_error)
     }
 
-    #[tool(
-        description = "Record a balance assertion: what an account should hold at the END \
-        of a date. A mismatch is a hard error when the books are checked."
-    )]
-    fn add_assertion(
-        &self,
-        Parameters(p): Parameters<AddAssertionParams>,
-    ) -> Result<String, String> {
+    fn add_assertion(&self, p: AddAssertionParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let date = parse_date(&p.date)?;
             let balances = p
@@ -576,11 +641,7 @@ impl SapphireLedgerServer {
         .map_err(render_error)
     }
 
-    #[tool(
-        description = "Record an observed exchange rate in the price log: one unit of \
-        `base` costs `rate` units of `quote` on `date`."
-    )]
-    fn add_price(&self, Parameters(p): Parameters<AddPriceParams>) -> Result<String, String> {
+    fn add_price(&self, p: AddPriceParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
             let date = parse_date(&p.date)?;
             let rate = parse_decimal(&p.rate)?;
@@ -597,116 +658,31 @@ impl SapphireLedgerServer {
     }
 }
 
-#[rmcp::tool_handler(router = self.tool_router)]
-impl ServerHandler for SapphireLedgerServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "Sapphire Ledger is a plain-text double-entry household ledger. Use \
-             list_accounts to see the chart of accounts, query_postings to find what \
-             happened to an account, add_transaction to record spending, and \
-             validate_workspace to check the books. Every transaction must balance: its \
-             postings sum to zero per currency. An account must exist before anything \
-             can be posted to it."
-                .to_owned(),
-        )
-    }
-}
-
-// ── startup helpers ───────────────────────────────────────────────────────────
-
-/// Open the ledger at `dir`, or find one by walking up from the working
-/// directory when `dir` is None.
-///
-/// With `init`, the literal target (no upward search) is created and turned
-/// into a ledger if it is not one already. An existing ledger is reused.
-pub fn prepare_state(ledger_dir: Option<&Path>, init: bool) -> anyhow::Result<LedgerState> {
-    if init {
-        let target: PathBuf = match ledger_dir {
-            Some(d) => d.to_path_buf(),
-            None => std::env::current_dir().context("failed to read current directory")?,
-        };
-        if !target.join(".sapphire-ledger").exists() {
-            sapphire_ledger_core::init_workspace(&target, "JPY")
-                .context("failed to initialize ledger")?;
-            tracing::info!("initialized sapphire-ledger in {}", target.display());
-        }
-        return LedgerState::open(&target).context("failed to open ledger after init");
-    }
-
-    match ledger_dir {
-        Some(d) => LedgerState::open(d).with_context(|| {
-            format!(
-                "not a sapphire-ledger: {} — pass --init to create one",
-                d.display()
-            )
-        }),
-        None => {
-            let cwd = std::env::current_dir().context("failed to read current directory")?;
-            LedgerState::find(&cwd).context(
-                "no sapphire-ledger found in the current directory or any parent \
-                 — pass --init to create one",
-            )
-        }
-    }
-}
-
-// ── stdio entry point ─────────────────────────────────────────────────────────
-
-/// Serve the ledger over stdio, speaking MCP.
-#[tokio::main]
-pub async fn run(ledger_dir: Option<&Path>, init: bool) -> anyhow::Result<()> {
-    // stdout carries JSON-RPC, so every log line goes to stderr. `try_init`:
-    // a caller that already installed a (stderr) subscriber keeps it.
-    let _ = tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .try_init();
-
-    let state = prepare_state(ledger_dir, init)?;
-    let server = SapphireLedgerServer::new(state);
-    let service = server.serve(stdio()).await?;
-    service.waiting().await?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use sapphire_ledger_core::AccountType;
 
+    /// A fresh ledger at `dir`, opened.
+    fn prepare_state(dir: &Path) -> LedgerState {
+        sapphire_ledger_core::init_workspace(dir, "JPY").expect("init test ledger");
+        LedgerState::open(dir).expect("open test ledger")
+    }
+
     /// Build a throwaway server over a freshly initialized ledger. Hold the
     /// `TempDir` for the test's duration — dropping it removes the directory
     /// the open state points at.
-    fn test_server() -> (tempfile::TempDir, SapphireLedgerServer) {
+    fn test_server() -> (tempfile::TempDir, LedgerMethods) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let state = prepare_state(Some(dir.path()), true).expect("init test ledger");
-        (dir, SapphireLedgerServer::new(state))
+        let state = prepare_state(dir.path());
+        (dir, LedgerMethods::new(state))
     }
 
     #[test]
     fn list_accounts_is_empty_on_a_fresh_ledger() {
         let (_dir, server) = test_server();
-        let json = server
-            .list_accounts(Parameters(EmptyParams {}))
-            .expect("ok");
+        let json = server.list_accounts(EmptyParams {}).expect("ok");
         assert_eq!(json.trim(), "[]");
-    }
-
-    /// Zero-argument tools must advertise a top-level `type: object`, or
-    /// Anthropic rejects the tool with
-    /// `tools.<N>.custom.input_schema.type: Field required`.
-    #[test]
-    fn every_tool_input_schema_declares_object_type() {
-        let tools = SapphireLedgerServer::tool_router().list_all();
-        assert_eq!(tools.len(), 9);
-        for tool in tools {
-            let schema = serde_json::to_value(&tool.input_schema).expect("schema to json");
-            assert_eq!(
-                schema.get("type").and_then(|t| t.as_str()),
-                Some("object"),
-                "tool {} has a non-object input schema: {schema}",
-                tool.name
-            );
-        }
     }
 
     #[test]
@@ -739,9 +715,7 @@ currency = "JPY"
         )
         .expect("write");
 
-        let json = server
-            .validate_workspace(Parameters(EmptyParams {}))
-            .expect("ok");
+        let json = server.validate_workspace(EmptyParams {}).expect("ok");
         assert!(json.contains("undefined account"), "got: {json}");
     }
 
@@ -753,7 +727,7 @@ currency = "JPY"
     #[test]
     fn query_postings_matches_a_name_only_posting_by_account_name() {
         let dir = tempfile::tempdir().expect("tempdir");
-        prepare_state(Some(dir.path()), true).expect("init test ledger");
+        prepare_state(dir.path());
 
         ops::create_account(
             dir.path(),
@@ -803,15 +777,15 @@ currency = "JPY"
         .expect("write");
 
         let state = LedgerState::open(dir.path()).expect("reopen ledger");
-        let server = SapphireLedgerServer::new(state);
+        let server = LedgerMethods::new(state);
 
         let json = server
-            .query_postings(Parameters(QueryPostingsParams {
+            .query_postings(QueryPostingsParams {
                 account: Some("Expenses:Food".to_string()),
                 currency: None,
                 date_from: None,
                 date_to: None,
-            }))
+            })
             .expect("ok");
         assert!(json.contains("\"tx00002\""), "got: {json}");
     }
@@ -827,15 +801,15 @@ currency = "JPY"
         }
     }
 
-    fn add_account(server: &SapphireLedgerServer, name: &str, ty: &str) -> String {
+    fn add_account(server: &LedgerMethods, name: &str, ty: &str) -> String {
         server
-            .add_account(Parameters(AddAccountParams {
+            .add_account(AddAccountParams {
                 name: name.into(),
                 account_type: ty.into(),
                 currencies: vec![],
                 opened_at: "2026-01-01".into(),
                 description: None,
-            }))
+            })
             .expect("add_account")
     }
 
@@ -846,7 +820,7 @@ currency = "JPY"
         add_account(&server, "Assets:Cash:JPY", "Asset");
 
         let created = server
-            .add_transaction(Parameters(AddTransactionParams {
+            .add_transaction(AddTransactionParams {
                 date: "2026-05-21".into(),
                 narration: "イオン買い物".into(),
                 payee: Some("イオン".into()),
@@ -856,23 +830,21 @@ currency = "JPY"
                     posting_param("Expenses:Food", "1200"),
                     posting_param("Assets:Cash:JPY", "-1200"),
                 ],
-            }))
+            })
             .expect("add_transaction");
         assert!(created.contains("created"), "got: {created}");
 
         let hits = server
-            .query_postings(Parameters(QueryPostingsParams {
+            .query_postings(QueryPostingsParams {
                 account: Some("Expenses:Food".into()),
                 currency: None,
                 date_from: None,
                 date_to: None,
-            }))
+            })
             .expect("query");
         assert!(hits.contains("イオン買い物"), "got: {hits}");
 
-        let issues = server
-            .validate_workspace(Parameters(EmptyParams {}))
-            .expect("validate");
+        let issues = server.validate_workspace(EmptyParams {}).expect("validate");
         assert_eq!(issues.trim(), "[]", "ledger should be clean, got: {issues}");
     }
 
@@ -891,7 +863,7 @@ currency = "JPY"
             .to_string();
 
         server
-            .add_transaction(Parameters(AddTransactionParams {
+            .add_transaction(AddTransactionParams {
                 date: "2026-05-21".into(),
                 narration: "by id".into(),
                 payee: None,
@@ -901,12 +873,10 @@ currency = "JPY"
                     posting_param(&food_id, "500"),
                     posting_param("Assets:Cash:JPY", "-500"),
                 ],
-            }))
+            })
             .expect("add_transaction by id");
 
-        let issues = server
-            .validate_workspace(Parameters(EmptyParams {}))
-            .expect("validate");
+        let issues = server.validate_workspace(EmptyParams {}).expect("validate");
         assert_eq!(issues.trim(), "[]", "got: {issues}");
     }
 
@@ -917,7 +887,7 @@ currency = "JPY"
         add_account(&server, "Assets:Cash:JPY", "Asset");
 
         let err = server
-            .add_transaction(Parameters(AddTransactionParams {
+            .add_transaction(AddTransactionParams {
                 date: "2026-05-21".into(),
                 narration: "wrong".into(),
                 payee: None,
@@ -927,7 +897,7 @@ currency = "JPY"
                     posting_param("Expenses:Food", "1200"),
                     posting_param("Assets:Cash:JPY", "-999"),
                 ],
-            }))
+            })
             .expect_err("must reject");
         assert!(err.contains("does not balance"), "got: {err}");
     }
@@ -936,13 +906,13 @@ currency = "JPY"
     fn add_account_rejects_an_unknown_type() {
         let (_dir, server) = test_server();
         let err = server
-            .add_account(Parameters(AddAccountParams {
+            .add_account(AddAccountParams {
                 name: "Assets:Cash:JPY".into(),
                 account_type: "Bogus".into(),
                 currencies: vec![],
                 opened_at: "2026-01-01".into(),
                 description: None,
-            }))
+            })
             .expect_err("must reject");
         assert!(
             err.contains("Bogus"),
@@ -952,20 +922,15 @@ currency = "JPY"
 
     /// Build a throwaway server that records every path it is asked to
     /// notify about, so a test can assert the observer actually fired.
-    fn test_server_with_observer() -> (
-        tempfile::TempDir,
-        SapphireLedgerServer,
-        Arc<Mutex<Vec<PathBuf>>>,
-    ) {
+    fn test_server_with_observer() -> (tempfile::TempDir, LedgerMethods, Arc<Mutex<Vec<PathBuf>>>) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let state = prepare_state(Some(dir.path()), true).expect("init test ledger");
+        let state = prepare_state(dir.path());
         let seen: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
         let seen_for_observer = Arc::clone(&seen);
-        let server = SapphireLedgerServer::new(state).with_write_observer(Arc::new(
-            move |paths: &[PathBuf]| {
+        let server =
+            LedgerMethods::new(state).with_write_observer(Arc::new(move |paths: &[PathBuf]| {
                 seen_for_observer.lock().unwrap().extend_from_slice(paths);
-            },
-        ));
+            }));
         (dir, server, seen)
     }
 
@@ -974,13 +939,13 @@ currency = "JPY"
         let (_dir, server, seen) = test_server_with_observer();
 
         server
-            .add_price(Parameters(AddPriceParams {
+            .add_price(AddPriceParams {
                 date: "2026-05-21".into(),
                 base: "USD".into(),
                 quote: "JPY".into(),
                 rate: "150".into(),
                 source: None,
-            }))
+            })
             .expect("add_price");
 
         assert_eq!(
@@ -1006,13 +971,13 @@ currency = "JPY"
             .expect("write broken toml");
 
         let result = server
-            .add_price(Parameters(AddPriceParams {
+            .add_price(AddPriceParams {
                 date: "2026-05-21".into(),
                 base: "USD".into(),
                 quote: "JPY".into(),
                 rate: "150".into(),
                 source: None,
-            }))
+            })
             .expect("the write itself succeeded; only the post-write reload should fail");
 
         assert!(result.contains("created price"), "got: {result}");
@@ -1045,7 +1010,7 @@ currency = "JPY"
         .expect("write");
 
         let err = server
-            .validate_workspace(Parameters(EmptyParams {}))
+            .validate_workspace(EmptyParams {})
             .expect_err("a malformed record must fail the reload");
         assert!(
             err.contains("tx-broken.toml"),
@@ -1076,7 +1041,7 @@ currency = "JPY"
         .expect("write");
 
         let err = server
-            .add_transaction(Parameters(AddTransactionParams {
+            .add_transaction(AddTransactionParams {
                 date: "2026-05-21".into(),
                 narration: "blocked".into(),
                 payee: None,
@@ -1086,7 +1051,7 @@ currency = "JPY"
                     posting_param("Expenses:Food", "1200"),
                     posting_param("Assets:Cash", "-1200"),
                 ],
-            }))
+            })
             .expect_err("the pre-write reload must refuse the write");
         assert!(
             err.contains("tx-broken.toml"),
@@ -1110,13 +1075,13 @@ currency = "JPY"
         .expect("write");
 
         let result = server
-            .add_price(Parameters(AddPriceParams {
+            .add_price(AddPriceParams {
                 date: "2026-05-21".into(),
                 base: "USD".into(),
                 quote: "JPY".into(),
                 rate: "150".into(),
                 source: None,
-            }))
+            })
             .expect("the write itself succeeded");
         assert!(
             result.contains("tx-broken.toml"),
