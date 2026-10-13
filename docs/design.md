@@ -370,7 +370,7 @@ non-goal here, not a stopgap for a slow walk that hasn't been measured yet.
 ```
 sapphire-ledger/
 ├── cli/                     # `sapphire-ledger`, the one binary: CLI, app server, `mcp`
-├── desktop/                 # egui GUI (no MCP transport of its own)
+├── desktop/                 # egui GUI: a client of the app server
 └── crates/
     ├── sapphire-ledger-core/  # data model, TOML I/O, validation, write path
     └── sapphire-ledger-mcp/   # the ledger's MCP tools and server methods — LIBRARY only
@@ -605,7 +605,12 @@ permissive until there is a reason to tighten it.
 - 🚧 Sync through the bridge is wired but not yet exercised end to end; the
   ledger's own verbs still write the files directly rather than over IPC.
 - ✅ CLI write commands (`account add`, `tx add`, `assertion add`, `price add`, `tx list`).
-- 🚧 Desktop GUI.
+- ✅ Desktop GUI (`sapphire-ledger-desktop`): a pure client of the running
+  server, like sapphire-sync's. The Ledger tab reads and writes through the
+  `sapphire-ledger.*` methods (accounts with balances, postings, validation
+  issues, new transaction / account forms); the Sync tab is the framework's
+  `SyncPanel`. CJK text uses a font the OS already has
+  (`sapphire_framework::gui::fonts`); no font is bundled.
 - 🚧 Price conversion / base-currency reporting.
 - 🚧 Phase 2: see the issue tracker.
 

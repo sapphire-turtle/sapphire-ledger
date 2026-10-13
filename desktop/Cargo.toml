@@ -2,12 +2,28 @@
 name = "sapphire-ledger-desktop"
 version = "0.1.0"
 edition.workspace = true
-description.workspace = true
+description = "Desktop GUI for sapphire-ledger"
 license.workspace = true
 repository.workspace = true
+publish = false
 
 [dependencies]
-sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0" }
-sapphire-ledger-mcp  = { path = "../crates/sapphire-ledger-mcp",  version = "0.1.0" }
-eframe = "0.34"
-egui = "0.34"
+sapphire-framework = { workspace = true, features = ["gui", "ipc"] }
+# The record types the server's answers deserialize into, and the methods'
+# parameters and names. No store: the desktop reads nothing from disk.
+sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
+sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false }
+eframe = "0.36"
+chrono.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+# The real server, for the client test: `serve::build()`.
+sapphire-ledger = { path = "../cli", default-features = false }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "time"] }

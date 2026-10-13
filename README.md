@@ -18,7 +18,7 @@ A double-entry household ledger built on [sapphire-framework](https://github.com
 ```
 sapphire-ledger/
 ├── cli/                     # the one binary, sapphire-ledger: CLI, and the app server (sync, MCP over stdio and /mcp)
-├── desktop/                 # Desktop GUI (egui); still a scaffold
+├── desktop/                 # Desktop GUI (egui): the books and sync, a client of the server
 └── crates/
     ├── sapphire-ledger-core/  # Data model, TOML parser/serializer, validation, write path
     └── sapphire-ledger-mcp/   # the ledger's MCP tools and server methods (library)
@@ -36,7 +36,10 @@ client at `sapphire-ledger mcp` to read and record entries over stdio, or turn
 on its `/mcp` in `server.toml` and reach it over HTTP with an external-device
 token. Both serve the workspace the server has selected (see
 [`docs/design.md`](docs/design.md#mcp-server) for the setup and the auth
-model). The desktop GUI is still a scaffold, but the CLI can now write:
+model). The desktop app (`sapphire-ledger-desktop`) is a client of that
+server: it shows the accounts with their balances and each account's
+postings, records transactions and accounts, and carries the framework's
+sync panel. The CLI writes too:
 
 ```
 sapphire-ledger account add Expenses:Food --type Expense
