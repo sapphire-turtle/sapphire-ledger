@@ -63,6 +63,10 @@ fn main() -> Result<()> {
                 anyhow::bail!("validation failed with {} issue(s)", issues.len());
             }
         }
+        Some(Command::Migrate { dry_run }) => {
+            let root = resolve_root(cli.ledger_dir)?;
+            commands::migrate(&root, dry_run)
+        }
         Some(Command::Account(c)) => commands::account(c, &resolve_root(cli.ledger_dir)?),
         Some(Command::Tx(c)) => commands::tx(c, &resolve_root(cli.ledger_dir)?),
         Some(Command::Assertion(c)) => commands::assertion(c, &resolve_root(cli.ledger_dir)?),

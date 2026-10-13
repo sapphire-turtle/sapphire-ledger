@@ -17,6 +17,7 @@ pub const ASSERTIONS_DIR: &str = "assertions";
 pub const PRICES_DIR: &str = "prices";
 
 pub const TOML_EXTENSION: &str = "toml";
+pub const MARKDOWN_EXTENSION: &str = "md";
 
 /// Walk upward from `start` looking for a directory containing `.sapphire-ledger/`.
 /// Returns the workspace root (the directory containing `.sapphire-ledger/`, not
@@ -36,13 +37,13 @@ pub fn find_workspace_root(start: &Path) -> Result<PathBuf> {
 }
 
 /// Convert an account name (e.g. `"Assets:Cash:USD"`) into its relative path
-/// under `accounts/` (e.g. `accounts/Assets/Cash/USD.toml`).
+/// under `accounts/` (e.g. `accounts/Assets/Cash/USD.md`).
 pub fn account_relative_path(name: &str) -> Result<PathBuf> {
     let segments = account_name_segments(name)?;
     let mut path = PathBuf::from(ACCOUNTS_DIR);
     for (i, seg) in segments.iter().enumerate() {
         if i + 1 == segments.len() {
-            path.push(format!("{seg}.{TOML_EXTENSION}"));
+            path.push(format!("{seg}.{MARKDOWN_EXTENSION}"));
         } else {
             path.push(seg);
         }
@@ -51,7 +52,7 @@ pub fn account_relative_path(name: &str) -> Result<PathBuf> {
 }
 
 /// Inverse of [`account_relative_path`]: given a path relative to the
-/// workspace root (e.g. `accounts/Assets/Cash/USD.toml`), reconstruct the
+/// workspace root (e.g. `accounts/Assets/Cash/USD.md`), reconstruct the
 /// account name `"Assets:Cash:USD"`.
 pub fn account_name_from_relative_path(rel: &Path) -> Result<String> {
     let stripped = rel.strip_prefix(ACCOUNTS_DIR).map_err(|_| {
@@ -75,10 +76,10 @@ pub fn account_name_from_relative_path(rel: &Path) -> Result<String> {
             .ok_or_else(|| Error::Validation(format!("non-UTF-8 path: {}", rel.display())))?;
         if i + 1 == components.len() {
             let trimmed = part
-                .strip_suffix(&format!(".{TOML_EXTENSION}"))
+                .strip_suffix(&format!(".{MARKDOWN_EXTENSION}"))
                 .ok_or_else(|| {
                     Error::Validation(format!(
-                        "account file does not end with .{TOML_EXTENSION}: {}",
+                        "account file does not end with .{MARKDOWN_EXTENSION}: {}",
                         rel.display()
                     ))
                 })?;
@@ -90,12 +91,12 @@ pub fn account_name_from_relative_path(rel: &Path) -> Result<String> {
     Ok(segments.join(&crate::account::ACCOUNT_NAME_SEPARATOR.to_string()))
 }
 
-/// Relative path for a transaction file: `transactions/{year}/{MM}/{id}.toml`.
+/// Relative path for a transaction file: `transactions/{year}/{MM}/{id}.md`.
 pub fn transaction_relative_path(date: NaiveDate, id: &str) -> PathBuf {
     PathBuf::from(TRANSACTIONS_DIR)
         .join(format!("{:04}", date.year()))
         .join(format!("{:02}", date.month()))
-        .join(format!("{id}.{TOML_EXTENSION}"))
+        .join(format!("{id}.{MARKDOWN_EXTENSION}"))
 }
 
 /// Relative path for an assertion file: `assertions/{year}/{MM}/{id}.toml`.

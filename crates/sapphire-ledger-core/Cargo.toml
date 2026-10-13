@@ -19,6 +19,7 @@ grain-id.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 rust_decimal.workspace = true
+sapphire-frontmatter.workspace = true
 sapphire-workspace.workspace = true
 
 [dev-dependencies]

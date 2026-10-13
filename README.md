@@ -6,8 +6,8 @@ A double-entry household ledger built on [sapphire-framework](https://github.com
 
 ## Concept
 
-- **TOML as source of truth** — all data lives in plain `.toml` files you can read and edit with any tool
-- **No cache required** — `load_workspace` reads the TOML files directly on every load, which is fast enough at household scale; no SQLite, no database
+- **Plain text as source of truth** — accounts and transactions are Markdown files with YAML front matter (the description or comment is the body); assertions and prices are `.toml`. Read and edit them with any tool
+- **No cache required** — `load_workspace` reads the files directly on every load, which is fast enough at household scale; no SQLite, no database
 - **Double-entry bookkeeping** — every transaction is a set of balanced postings (debits = credits per currency)
 - **Multi-currency from day one** — postings carry a currency; cross-currency transactions use inline exchange prices
 - **One file per record** — each transaction, account, balance assertion, and price-log entry lives in its own file to keep git merges conflict-free under human + AI co-editing
@@ -20,7 +20,7 @@ sapphire-ledger/
 ├── cli/                     # the one binary, sapphire-ledger: CLI, and the app server (sync, MCP over stdio and /mcp)
 ├── desktop/                 # Desktop GUI (egui): the books and sync, a client of the server
 └── crates/
-    ├── sapphire-ledger-core/  # Data model, TOML parser/serializer, validation, write path
+    ├── sapphire-ledger-core/  # Data model, record I/O, migration, validation, write path
     └── sapphire-ledger-mcp/   # the ledger's MCP tools and server methods (library)
 ```
 
@@ -50,6 +50,9 @@ sapphire-ledger tx list --account Expenses:Food
 
 plus `assertion add` and `price add` — all thin wrappers over the same
 `core::ops` the MCP tools use, so the rules are identical whoever is typing.
+
+A ledger made by an older build (every record TOML) has to be upgraded once
+with `sapphire-ledger migrate` (`--dry-run` to preview); commit it first.
 
 ## License
 

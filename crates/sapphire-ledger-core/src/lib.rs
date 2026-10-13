@@ -1,7 +1,8 @@
 //! Core data model and storage for sapphire-ledger.
 //!
-//! Defines the on-disk TOML record types (Account, Transaction, Assertion,
-//! PriceEntry, workspace Config), their validation, and the [`ops`] write
+//! Defines the on-disk record types (Account and Transaction as Markdown with
+//! YAML front matter; Assertion, PriceEntry and the workspace Config as TOML),
+//! their validation, the [`migrate`] from older layouts, and the [`ops`] write
 //! path that mints ids, resolves account references and enforces the
 //! refuse-to-overwrite rule. There is no SQLite cache here and none is
 //! planned — see "Cache strategy" in `docs/design.md`.
@@ -10,6 +11,7 @@ pub mod account;
 pub mod assertion;
 pub mod config;
 pub mod error;
+pub mod migrate;
 pub mod ops;
 pub mod prices;
 pub mod repository;
@@ -22,8 +24,12 @@ pub use account::{Account, AccountType, account_name_segments, describe_ref, res
 pub use assertion::{Assertion, Balance};
 pub use config::{CURRENT_SCHEMA_VERSION, CacheConfig, Config};
 pub use error::{Error, Result};
+pub use migrate::{MigrationReport, migrate_workspace};
 pub use prices::{Price, PriceEntry};
-pub use repository::{Workspace, load_toml, load_workspace, save_toml, walk_toml_files};
+pub use repository::{
+    MarkdownRecord, Workspace, from_markdown, load_markdown, load_toml, load_workspace,
+    save_markdown, save_toml, to_markdown, walk_files, walk_markdown_files, walk_toml_files,
+};
 pub use state::LedgerState;
 pub use transaction::{Posting, Transaction, TransactionStatus};
 pub use validate::ValidationIssue;

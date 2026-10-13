@@ -135,6 +135,7 @@ async fn the_tools_work_on_the_servers_workspace_over_ipc() {
                 posting("Expenses:Food", "1200"),
                 posting("Assets:Cash", "-1200"),
             ],
+            comment: None,
         }))
         .await
         .expect("add_transaction");
@@ -170,6 +171,7 @@ async fn the_tools_work_on_the_servers_workspace_over_ipc() {
                 posting("Expenses:Food", "1200"),
                 posting("Assets:Cash", "-999"),
             ],
+            comment: None,
         }))
         .await
         .expect_err("unbalanced");

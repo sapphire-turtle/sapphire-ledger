@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::error::{Error, Result};
+use crate::repository::MarkdownRecord;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -59,6 +60,21 @@ pub struct Transaction {
     pub created_at: DateTime<FixedOffset>,
     pub updated_at: DateTime<FixedOffset>,
     pub postings: Vec<Posting>,
+    /// Free-form notes on the whole transaction: the file's Markdown body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+impl MarkdownRecord for Transaction {
+    const BODY_FIELD: &'static str = "comment";
+
+    fn body(&self) -> Option<&str> {
+        self.comment.as_deref()
+    }
+
+    fn set_body(&mut self, body: Option<String>) {
+        self.comment = body;
+    }
 }
 
 impl Transaction {

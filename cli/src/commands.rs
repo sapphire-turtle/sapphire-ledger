@@ -46,6 +46,7 @@ pub fn tx(command: TxCommand, root: &Path) -> anyhow::Result<()> {
             tags,
             status,
             postings,
+            comment,
         } => {
             let date = match date.as_deref() {
                 Some(raw) => parse_date(raw)?,
@@ -57,8 +58,9 @@ pub fn tx(command: TxCommand, root: &Path) -> anyhow::Result<()> {
                 .map(|spec| posting::parse(spec))
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            let (id, dest) =
-                ops::create_transaction(root, date, narration, payee, tags, status, postings)?;
+            let (id, dest) = ops::create_transaction(
+                root, date, narration, payee, tags, status, postings, comment,
+            )?;
             println!("created transaction {id} at {}", shown(&dest));
             Ok(())
         }
@@ -107,6 +109,28 @@ pub fn price(command: PriceCommand, root: &Path) -> anyhow::Result<()> {
 
     let (id, dest) = ops::create_price(root, date, base, quote, rate, source)?;
     println!("created price {id} at {}", shown(&dest));
+    Ok(())
+}
+
+pub fn migrate(root: &Path, dry_run: bool) -> anyhow::Result<()> {
+    let report = sapphire_ledger_core::migrate_workspace(root, dry_run)?;
+    let relative = |path: &Path| shown(path.strip_prefix(root).unwrap_or(path));
+    for (from, to) in &report.converted {
+        println!("{} -> {}", relative(from), relative(to));
+    }
+    for path in &report.comments_dropped {
+        eprintln!(
+            "warning: {} looks like it has `#` comments, which are not carried over",
+            relative(path)
+        );
+    }
+    let verb = if dry_run { "would move" } else { "moved" };
+    println!(
+        "{verb} {} record(s) to Markdown; schema version {} -> {}",
+        report.converted.len(),
+        report.from_version,
+        report.to_version,
+    );
     Ok(())
 }
 

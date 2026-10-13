@@ -443,6 +443,14 @@ impl LedgerView {
                             }
                         });
                     ui.end_row();
+                    ui.label("Comment");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut form.comment)
+                            .desired_rows(3)
+                            .desired_width(360.0)
+                            .hint_text("Markdown"),
+                    );
+                    ui.end_row();
                 });
 
                 ui.separator();
@@ -570,7 +578,11 @@ impl LedgerView {
                         );
                         ui.end_row();
                         ui.label("Description");
-                        ui.text_edit_singleline(&mut form.description);
+                        ui.add(
+                            egui::TextEdit::multiline(&mut form.description)
+                                .desired_rows(3)
+                                .hint_text("Markdown"),
+                        );
                         ui.end_row();
                     });
                 ui.separator();

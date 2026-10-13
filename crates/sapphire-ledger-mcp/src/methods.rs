@@ -245,6 +245,7 @@ pub struct AddAccountParams {
     pub currencies: Vec<String>,
     /// `YYYY-MM-DD` the account opened.
     pub opened_at: String,
+    /// Free-form notes on the account, in Markdown.
     pub description: Option<String>,
 }
 
@@ -278,6 +279,8 @@ pub struct AddTransactionParams {
     pub status: Option<String>,
     /// At least two postings, summing to zero per currency.
     pub postings: Vec<PostingParam>,
+    /// Free-form notes on the whole transaction, in Markdown.
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -602,6 +605,7 @@ impl LedgerMethods {
                 p.tags,
                 status,
                 postings,
+                p.comment,
             )?;
             let reload_err = guard.reload().err();
             drop(guard);
@@ -691,26 +695,24 @@ mod tests {
         // Written straight to disk: ops::create_transaction would refuse it,
         // which is the point -- this is the hand-edited-file case that
         // validate_workspace exists to catch.
-        let path = dir.path().join("transactions/2026/05/tx00001.toml");
+        let path = dir.path().join("transactions/2026/05/tx00001.md");
         std::fs::create_dir_all(path.parent().unwrap()).expect("mkdir");
         std::fs::write(
             &path,
-            r#"
-id = "tx00001"
-date = "2026-05-21"
-narration = "orphan"
-created_at = "2026-05-21T18:30:00+09:00"
-updated_at = "2026-05-21T18:30:00+09:00"
-
-[[postings]]
-account_name = "Expenses:Nowhere"
-amount = "10"
-currency = "JPY"
-
-[[postings]]
-account_name = "Assets:Nowhere"
-amount = "-10"
-currency = "JPY"
+            r#"---
+id: tx00001
+date: 2026-05-21
+narration: orphan
+created_at: 2026-05-21T18:30:00+09:00
+updated_at: 2026-05-21T18:30:00+09:00
+postings:
+- account_name: Expenses:Nowhere
+  amount: 10
+  currency: JPY
+- account_name: Assets:Nowhere
+  amount: -10
+  currency: JPY
+---
 "#,
         )
         .expect("write");
@@ -752,26 +754,24 @@ currency = "JPY"
         // above: this is the only way to produce a posting with a name but
         // no id, since ops::create_transaction always resolves and fills
         // account_id.
-        let path = dir.path().join("transactions/2026/05/tx00002.toml");
+        let path = dir.path().join("transactions/2026/05/tx00002.md");
         std::fs::create_dir_all(path.parent().unwrap()).expect("mkdir");
         std::fs::write(
             &path,
-            r#"
-id = "tx00002"
-date = "2026-05-21"
-narration = "groceries"
-created_at = "2026-05-21T18:30:00+09:00"
-updated_at = "2026-05-21T18:30:00+09:00"
-
-[[postings]]
-account_name = "Expenses:Food"
-amount = "10"
-currency = "JPY"
-
-[[postings]]
-account_name = "Assets:Cash"
-amount = "-10"
-currency = "JPY"
+            r#"---
+id: tx00002
+date: 2026-05-21
+narration: groceries
+created_at: 2026-05-21T18:30:00+09:00
+updated_at: 2026-05-21T18:30:00+09:00
+postings:
+- account_name: Expenses:Food
+  amount: 10
+  currency: JPY
+- account_name: Assets:Cash
+  amount: -10
+  currency: JPY
+---
 "#,
         )
         .expect("write");
@@ -830,6 +830,7 @@ currency = "JPY"
                     posting_param("Expenses:Food", "1200"),
                     posting_param("Assets:Cash:JPY", "-1200"),
                 ],
+                comment: None,
             })
             .expect("add_transaction");
         assert!(created.contains("created"), "got: {created}");
@@ -873,6 +874,7 @@ currency = "JPY"
                     posting_param(&food_id, "500"),
                     posting_param("Assets:Cash:JPY", "-500"),
                 ],
+                comment: None,
             })
             .expect("add_transaction by id");
 
@@ -897,6 +899,7 @@ currency = "JPY"
                     posting_param("Expenses:Food", "1200"),
                     posting_param("Assets:Cash:JPY", "-999"),
                 ],
+                comment: None,
             })
             .expect_err("must reject");
         assert!(err.contains("does not balance"), "got: {err}");
@@ -965,7 +968,7 @@ currency = "JPY"
     fn a_broken_record_does_not_turn_a_successful_write_into_a_reported_failure() {
         let (dir, server, seen) = test_server_with_observer();
 
-        let broken = dir.path().join("transactions/2026/05/tx-broken.toml");
+        let broken = dir.path().join("assertions/2026/05/as-broken.toml");
         std::fs::create_dir_all(broken.parent().unwrap()).expect("mkdir");
         std::fs::write(&broken, "this is not valid toml >>>>>>> HEAD\n")
             .expect("write broken toml");
@@ -1000,7 +1003,7 @@ currency = "JPY"
     fn validate_workspace_names_the_file_it_could_not_parse() {
         let (dir, server) = test_server();
 
-        let broken = dir.path().join("transactions/2026/05/tx-broken.toml");
+        let broken = dir.path().join("assertions/2026/05/as-broken.toml");
         std::fs::create_dir_all(broken.parent().unwrap()).expect("mkdir");
         std::fs::write(
             &broken,
@@ -1013,7 +1016,7 @@ currency = "JPY"
             .validate_workspace(EmptyParams {})
             .expect_err("a malformed record must fail the reload");
         assert!(
-            err.contains("tx-broken.toml"),
+            err.contains("as-broken.toml"),
             "the agent cannot fix a file it is not told about, got: {err}"
         );
         assert!(
@@ -1031,7 +1034,7 @@ currency = "JPY"
         add_account(&server, "Expenses:Food", "Expense");
         add_account(&server, "Assets:Cash", "Asset");
 
-        let broken = dir.path().join("transactions/2026/05/tx-broken.toml");
+        let broken = dir.path().join("assertions/2026/05/as-broken.toml");
         std::fs::create_dir_all(broken.parent().unwrap()).expect("mkdir");
         std::fs::write(
             &broken,
@@ -1051,10 +1054,11 @@ currency = "JPY"
                     posting_param("Expenses:Food", "1200"),
                     posting_param("Assets:Cash", "-1200"),
                 ],
+                comment: None,
             })
             .expect_err("the pre-write reload must refuse the write");
         assert!(
-            err.contains("tx-broken.toml"),
+            err.contains("as-broken.toml"),
             "the agent must be told which file blocked the write, got: {err}"
         );
     }
@@ -1065,7 +1069,7 @@ currency = "JPY"
     fn the_post_write_warning_names_the_broken_file() {
         let (dir, server, _seen) = test_server_with_observer();
 
-        let broken = dir.path().join("transactions/2026/05/tx-broken.toml");
+        let broken = dir.path().join("assertions/2026/05/as-broken.toml");
         std::fs::create_dir_all(broken.parent().unwrap()).expect("mkdir");
         std::fs::write(
             &broken,
@@ -1084,7 +1088,7 @@ currency = "JPY"
             })
             .expect("the write itself succeeded");
         assert!(
-            result.contains("tx-broken.toml"),
+            result.contains("as-broken.toml"),
             "the WARNING must name the file that broke the reload, got: {result}"
         );
     }

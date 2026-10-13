@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use sapphire_ledger_core::{init_workspace, load_workspace};
+use sapphire_ledger_core::{Account, Transaction, init_workspace, load_workspace, save_markdown};
 
 fn tempdir() -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -14,20 +14,23 @@ fn tempdir() -> PathBuf {
     path
 }
 
+// Account and transaction fixtures are spelled in TOML, the shortest way to
+// write a record inline, and stored as the Markdown the ledger reads.
+
 fn write_account(root: &std::path::Path, rel: &str, body: &str) {
-    let path = root.join(rel);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, body).unwrap();
+    let account: Account = toml::from_str(body).unwrap();
+    save_markdown(&root.join(rel), &account).unwrap();
 }
 
 fn write_transaction(root: &std::path::Path, rel: &str, body: &str) {
-    let path = root.join(rel);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, body).unwrap();
+    let transaction: Transaction = toml::from_str(body).unwrap();
+    save_markdown(&root.join(rel), &transaction).unwrap();
 }
 
 fn write_assertion(root: &std::path::Path, rel: &str, body: &str) {
-    write_transaction(root, rel, body)
+    let path = root.join(rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, body).unwrap();
 }
 
 const ACCOUNT_CASH_JPY: &str = r#"
@@ -49,11 +52,11 @@ opened_at = "2026-05-21"
 fn clean_workspace_reports_no_issues() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.toml", ACCOUNT_CASH_JPY);
-    write_account(&root, "accounts/Expenses/Food.toml", ACCOUNT_FOOD);
+    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     write_transaction(
         &root,
-        "transactions/2026/05/tx01.toml",
+        "transactions/2026/05/tx01.md",
         r#"
 id = "tx01"
 date = "2026-05-21"
@@ -80,10 +83,10 @@ currency = "JPY"
 fn a_posting_with_account_id_and_a_stale_name_resolves_on_disk() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.toml", ACCOUNT_CASH_JPY);
+    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
     write_transaction(
         &root,
-        "transactions/2026/05/idlink.toml",
+        "transactions/2026/05/idlink.md",
         r#"
 id = "idlink"
 date = "2026-05-21"
@@ -115,10 +118,10 @@ currency = "JPY"
 fn flags_undefined_account_in_transaction() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.toml", ACCOUNT_CASH_JPY);
+    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
     write_transaction(
         &root,
-        "transactions/2026/05/bad01.toml",
+        "transactions/2026/05/bad01.md",
         r#"
 id = "bad01"
 date = "2026-05-21"
@@ -148,11 +151,11 @@ currency = "JPY"
 fn flags_currency_constraint_violation() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.toml", ACCOUNT_CASH_JPY);
-    write_account(&root, "accounts/Expenses/Food.toml", ACCOUNT_FOOD);
+    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     write_transaction(
         &root,
-        "transactions/2026/05/cur01.toml",
+        "transactions/2026/05/cur01.md",
         r#"
 id = "cur01"
 date = "2026-05-21"
@@ -183,11 +186,11 @@ currency = "USD"
 fn flags_unbalanced_transaction() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.toml", ACCOUNT_CASH_JPY);
-    write_account(&root, "accounts/Expenses/Food.toml", ACCOUNT_FOOD);
+    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     write_transaction(
         &root,
-        "transactions/2026/05/unbal.toml",
+        "transactions/2026/05/unbal.md",
         r#"
 id = "unbal"
 date = "2026-05-21"
@@ -242,11 +245,11 @@ currency = "JPY"
 fn reports_multiple_issues_without_short_circuiting() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.toml", ACCOUNT_CASH_JPY);
+    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
     // unbalanced
     write_transaction(
         &root,
-        "transactions/2026/05/a.toml",
+        "transactions/2026/05/a.md",
         r#"
 id = "a"
 date = "2026-05-21"
@@ -266,7 +269,7 @@ currency = "JPY"
     // undefined account
     write_transaction(
         &root,
-        "transactions/2026/05/b.toml",
+        "transactions/2026/05/b.md",
         r#"
 id = "b"
 date = "2026-05-21"
@@ -296,7 +299,7 @@ currency = "JPY"
 }
 
 fn write_price(root: &std::path::Path, rel: &str, body: &str) {
-    write_transaction(root, rel, body)
+    write_assertion(root, rel, body)
 }
 
 /// Sync resolves per path, last-writer-wins, so a record moved between months
@@ -307,8 +310,8 @@ fn write_price(root: &std::path::Path, rel: &str, body: &str) {
 fn flags_a_duplicate_transaction_id() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.toml", ACCOUNT_CASH_JPY);
-    write_account(&root, "accounts/Expenses/Food.toml", ACCOUNT_FOOD);
+    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     let body = |month: &str| {
         format!(
             r#"
@@ -328,8 +331,8 @@ currency = "JPY"
 "#
         )
     };
-    write_transaction(&root, "transactions/2026/05/dup01.toml", &body("05"));
-    write_transaction(&root, "transactions/2026/06/dup01.toml", &body("06"));
+    write_transaction(&root, "transactions/2026/05/dup01.md", &body("05"));
+    write_transaction(&root, "transactions/2026/06/dup01.md", &body("06"));
 
     let issues = load_workspace(&root).unwrap().validate();
     assert_eq!(issues.len(), 1, "issues: {issues:?}");
@@ -342,7 +345,7 @@ currency = "JPY"
 fn flags_a_duplicate_assertion_id() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.toml", ACCOUNT_CASH_JPY);
+    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
     let body = |month: &str| {
         format!(
             r#"
@@ -400,12 +403,12 @@ updated_at = "2026-{month}-15T12:00:00+09:00"
 fn flags_a_duplicate_account_name() {
     let root = tempdir();
     init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Expenses/Food.toml", ACCOUNT_FOOD);
+    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     // Same name, different id, parked at a path that does not match it -- a
     // hand edit or a half-applied rename.
     write_account(
         &root,
-        "accounts/Expenses/Groceries.toml",
+        "accounts/Expenses/Groceries.md",
         r#"
 id = "acct003"
 name = "Expenses:Food"
