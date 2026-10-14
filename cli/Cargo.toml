@@ -28,7 +28,6 @@ redb-store = [
 sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
 sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false }
 sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp"] }
-sapphire-bridge-client.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
