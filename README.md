@@ -63,6 +63,6 @@ This repository contains components under different licenses:
 | `sapphire-ledger-core` | MIT OR Apache-2.0 |
 | `sapphire-ledger-mcp` | MIT OR Apache-2.0 |
 | `sapphire-ledger` (`cli/`) | MIT OR Apache-2.0 |
-| `sapphire-ledger-desktop` | MIT OR Apache-2.0 |
+| `sapphire-ledger-desktop` | GPL-3.0-or-later, with [App Store marketplace exception](desktop/LICENSE.App-Store-Exception) |
 
-See the `LICENSE-MIT` / `LICENSE-APACHE` files in each component's directory for the full license text.
+See the `LICENSE` (or `LICENSE-MIT` / `LICENSE-APACHE`) file in each component's directory for the full license text.

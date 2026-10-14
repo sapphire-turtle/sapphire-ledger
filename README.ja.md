@@ -48,6 +48,6 @@ sapphire-ledger tx list --account Expenses:Food
 | `sapphire-ledger-core` | MIT OR Apache-2.0 |
 | `sapphire-ledger-mcp` | MIT OR Apache-2.0 |
 | `sapphire-ledger`（`cli/`） | MIT OR Apache-2.0 |
-| `sapphire-ledger-desktop` | MIT OR Apache-2.0 |
+| `sapphire-ledger-desktop` | GPL-3.0-or-later、[App Storeマーケットプレイス例外](desktop/LICENSE.App-Store-Exception)付き |
 
-各コンポーネントのディレクトリにある`LICENSE-MIT` / `LICENSE-APACHE`ファイルに完全なライセンス文書があります。
+各コンポーネントのディレクトリにある`LICENSE`（または`LICENSE-MIT` / `LICENSE-APACHE`）ファイルに完全なライセンス文書があります。
