@@ -119,9 +119,10 @@ pub fn price_relative_path(date: NaiveDate, id: &str) -> PathBuf {
 /// if missing. Errors if `target` already holds a ledger.
 ///
 /// A `.sapphire-ledger/` the framework made first (`sapphire-ledger workspace
-/// init`, which writes only its own `[workspace.*]` tables into
-/// `config.toml`) is not a ledger yet: the ledger's settings are added beside
-/// what the framework wrote, and the record directories are created.
+/// init`) is not a ledger yet: since sapphire-framework 0.20 it holds no
+/// `config.toml`, and an older one wrote only its own `[workspace.*]` tables
+/// there. The ledger's settings are added beside whatever is there, and the
+/// record directories are created. Only `schema_version` marks a ledger.
 pub fn init_workspace(target: &Path, base_currency: &str) -> Result<()> {
     fs::create_dir_all(target)?;
     let workspace_dir = target.join(WORKSPACE_DIR);
@@ -135,8 +136,7 @@ pub fn init_workspace(target: &Path, base_currency: &str) -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
         Err(e) => return Err(e.into()),
     };
-    if document.contains_key("schema_version") || (workspace_dir.exists() && !config_path.exists())
-    {
+    if document.contains_key("schema_version") {
         return Err(Error::Validation(format!(
             "{} already contains a sapphire-ledger workspace",
             target.display()
