@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "cli",
+    "crates/sapphire-ledger-api",
     "crates/sapphire-ledger-core",
     "desktop",
     "crates/sapphire-ledger-mcp",
@@ -30,6 +31,8 @@ rust_decimal = { version = "1", features = ["serde", "serde-with-str"] }
 # features off the framework's persistent store silently falls back to
 # in-memory otherwise.
 sapphire-framework = { version = "0.20.0", default-features = false }
+# The framework's methods every app server serves, under the ledger's own API.
+sapphire-server-api = { package = "sapphire-framework-server-api", version = "4.2" }
 # YAML front matter for the Markdown records (accounts, transactions).
 sapphire-frontmatter = { package = "sapphire-framework-frontmatter", version = "0.20.0" }
 sapphire-workspace = { package = "sapphire-framework-workspace", version = "0.20.0", default-features = false }

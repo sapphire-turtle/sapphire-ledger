@@ -1,0 +1,23 @@
+[package]
+name = "sapphire-ledger-api"
+# The major is the ledger's API version (`API_VERSION`); it moves only when the
+# methods or their types break, not with the ledger's version.
+version = "1.0.0"
+edition.workspace = true
+description = "The methods a sapphire-ledger app server serves, and their types"
+license.workspace = true
+repository.workspace = true
+categories = ["finance", "network-programming"]
+keywords = ["accounting", "ledger", "ipc", "protocol", "double-entry"]
+
+[dependencies]
+# The framework's methods every app server serves (`workspace.*`, `sync.*`),
+# re-exported as `server`: a client finds all it can ask the ledger's server here.
+sapphire-server-api.workspace = true
+chrono.workspace = true
+rust_decimal.workspace = true
+schemars.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

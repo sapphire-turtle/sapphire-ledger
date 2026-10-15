@@ -20,6 +20,7 @@ sapphire-ledger/
 ├── cli/                     # the one binary, sapphire-ledger: CLI, and the app server (sync, MCP over stdio and /mcp)
 ├── desktop/                 # Desktop GUI (egui): the books and sync, a client of the server
 └── crates/
+    ├── sapphire-ledger-api/   # The server's methods, their parameters and results (what a client links)
     ├── sapphire-ledger-core/  # Data model, record I/O, migration, validation, write path
     └── sapphire-ledger-mcp/   # the ledger's MCP tools and server methods (library)
 ```
@@ -60,6 +61,7 @@ This repository contains components under different licenses:
 
 | Component | License |
 |-----------|---------|
+| `sapphire-ledger-api` | MIT OR Apache-2.0 |
 | `sapphire-ledger-core` | MIT OR Apache-2.0 |
 | `sapphire-ledger-mcp` | MIT OR Apache-2.0 |
 | `sapphire-ledger` (`cli/`) | MIT OR Apache-2.0 |

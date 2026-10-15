@@ -7,8 +7,7 @@
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
-use sapphire_ledger_core::AccountType;
-use sapphire_ledger_mcp::methods::{AddAccountParams, AddTransactionParams, PostingParam};
+use sapphire_ledger_api::{AccountType, AddAccountParams, AddTransactionParams, PostingParam};
 
 /// One posting row as typed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
