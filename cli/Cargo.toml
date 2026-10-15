@@ -5,6 +5,7 @@ edition.workspace = true
 description.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "../README.md"
 categories = ["command-line-utilities", "finance"]
 keywords = ["accounting", "ledger", "double-entry", "cli", "mcp"]
 
