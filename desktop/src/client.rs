@@ -71,7 +71,7 @@ impl LedgerClient {
             kind: CLIENT_KIND.to_owned(),
             version: self.version.to_owned(),
             api: API_VERSION,
-            app_api: Some(sapphire_ledger_mcp::APP_API),
+            app_api: Some(sapphire_ledger_api::API_VERSION),
             pid: std::process::id(),
         };
         let (client, _) = ipc::connect_or_absent(&self.endpoint, self.app, info)
@@ -101,10 +101,11 @@ mod tests {
     use std::time::Duration;
 
     use sapphire_framework::backend::protocol as proto;
-    use sapphire_ledger_core::{AppKind, LEDGER_CTX, ValidationIssue};
-    use sapphire_ledger_mcp::methods::{
-        AddAccountParams, EmptyParams, PostingHit, QueryPostingsParams, names,
+    use sapphire_ledger_api::{
+        self as api, AddAccountParams, EmptyParams, PostingHit, QueryPostingsParams,
+        ValidationIssue,
     };
+    use sapphire_ledger_core::{AppKind, LEDGER_CTX};
 
     use super::*;
     use crate::form::{PostingRow, TxForm};
@@ -133,7 +134,7 @@ mod tests {
 
         let client = LedgerClient::new(LEDGER_CTX.app_name, "0.0.0", endpoint.clone());
         let err = client
-            .call(names::LIST_ACCOUNTS, EmptyParams {})
+            .call(api::LIST_ACCOUNTS, EmptyParams {})
             .await
             .unwrap_err();
         assert!(
@@ -171,7 +172,7 @@ mod tests {
         for (name, ty) in [("Expenses:Food", "Expense"), ("Assets:Cash", "Asset")] {
             client
                 .call(
-                    names::ADD_ACCOUNT,
+                    api::ADD_ACCOUNT,
                     AddAccountParams {
                         name: name.into(),
                         account_type: ty.into(),
@@ -200,19 +201,19 @@ mod tests {
             },
         ];
         let created = client
-            .call(names::ADD_TRANSACTION, form.to_params().unwrap())
+            .call(api::ADD_TRANSACTION, form.to_params().unwrap())
             .await
             .expect("the form's parameters are what the server takes");
         assert!(created.contains("created transaction"), "got: {created}");
 
-        let accounts: Vec<sapphire_ledger_core::Account> = client
-            .read(names::LIST_ACCOUNTS, EmptyParams {})
+        let accounts: Vec<api::Account> = client
+            .read(api::LIST_ACCOUNTS, EmptyParams {})
             .await
             .expect("accounts parse");
         assert_eq!(accounts.len(), 2);
         let postings: Vec<PostingHit> = client
             .read(
-                names::QUERY_POSTINGS,
+                api::QUERY_POSTINGS,
                 QueryPostingsParams {
                     account: None,
                     currency: None,
@@ -224,7 +225,7 @@ mod tests {
             .expect("postings parse");
         assert_eq!(postings.len(), 2);
         let issues: Vec<ValidationIssue> = client
-            .read(names::VALIDATE_WORKSPACE, EmptyParams {})
+            .read(api::VALIDATE_WORKSPACE, EmptyParams {})
             .await
             .expect("issues parse");
         assert!(issues.is_empty(), "{issues:?}");

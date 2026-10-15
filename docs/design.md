@@ -436,6 +436,7 @@ sapphire-ledger/
 ├── cli/                     # `sapphire-ledger`, the one binary: CLI, app server, `mcp`
 ├── desktop/                 # egui GUI: a client of the app server
 └── crates/
+    ├── sapphire-ledger-api/   # the server's methods, their parameters and results — what a client links
     ├── sapphire-ledger-core/  # data model, record I/O, migration, validation, write path
     └── sapphire-ledger-mcp/   # the ledger's MCP tools and server methods — LIBRARY only
 ```
@@ -470,8 +471,17 @@ The two halves live in `sapphire-ledger-mcp`:
 side (`register` adds the methods to the app server's router; each runs
 against the current workspace's `LedgerState`), and
 [`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs) is the rmcp handler
-(`LedgerTools`) the framework serves. The methods carry their own API version
-(`APP_API`), checked in the IPC handshake.
+(`LedgerTools`) the framework serves.
+
+What goes over the wire is
+[`sapphire-ledger-api`](../crates/sapphire-ledger-api/src/lib.rs)'s: the
+methods' names, their parameters and the records they answer with, on top of
+the framework's `sapphire-framework-server-api`. A client such as the desktop
+links it and nothing of the files. Its major version is the ledger's API
+version (`API_VERSION`), checked in the IPC handshake, so it moves only when
+the methods break. The records there mirror core's file records, which the
+server converts (`sapphire-ledger-mcp`'s `wire`), until the framework can let
+one definition serve both.
 
 ### Tools
 

@@ -17,9 +17,9 @@ use sapphire_framework::ipc;
 use sapphire_framework::mcp::{self, McpService, ToolContext};
 use serde::Serialize;
 
-use crate::methods::{
-    AddAccountParams, AddAssertionParams, AddPriceParams, AddTransactionParams, EmptyParams,
-    GetTransactionParams, QueryPostingsParams, QueryPricesParams, names,
+use sapphire_ledger_api::{
+    self as api, AddAccountParams, AddAssertionParams, AddPriceParams, AddTransactionParams,
+    EmptyParams, GetTransactionParams, QueryPostingsParams, QueryPricesParams,
 };
 
 /// How the ledger answers MCP: [`LedgerTools`], one per session.
@@ -74,7 +74,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<EmptyParams>,
     ) -> Result<String, String> {
-        self.call(names::LIST_ACCOUNTS, p).await
+        self.call(api::LIST_ACCOUNTS, p).await
     }
 
     #[tool(
@@ -85,7 +85,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<GetTransactionParams>,
     ) -> Result<String, String> {
-        self.call(names::GET_TRANSACTION, p).await
+        self.call(api::GET_TRANSACTION, p).await
     }
 
     #[tool(
@@ -98,7 +98,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<QueryPostingsParams>,
     ) -> Result<String, String> {
-        self.call(names::QUERY_POSTINGS, p).await
+        self.call(api::QUERY_POSTINGS, p).await
     }
 
     #[tool(
@@ -110,7 +110,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<QueryPricesParams>,
     ) -> Result<String, String> {
-        self.call(names::QUERY_PRICES, p).await
+        self.call(api::QUERY_PRICES, p).await
     }
 
     #[tool(
@@ -123,7 +123,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<EmptyParams>,
     ) -> Result<String, String> {
-        self.call(names::VALIDATE_WORKSPACE, p).await
+        self.call(api::VALIDATE_WORKSPACE, p).await
     }
 
     #[tool(
@@ -134,7 +134,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<AddAccountParams>,
     ) -> Result<String, String> {
-        self.call(names::ADD_ACCOUNT, p).await
+        self.call(api::ADD_ACCOUNT, p).await
     }
 
     #[tool(
@@ -145,7 +145,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<AddTransactionParams>,
     ) -> Result<String, String> {
-        self.call(names::ADD_TRANSACTION, p).await
+        self.call(api::ADD_TRANSACTION, p).await
     }
 
     #[tool(
@@ -156,7 +156,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<AddAssertionParams>,
     ) -> Result<String, String> {
-        self.call(names::ADD_ASSERTION, p).await
+        self.call(api::ADD_ASSERTION, p).await
     }
 
     #[tool(
@@ -167,7 +167,7 @@ impl LedgerTools {
         &self,
         Parameters(p): Parameters<AddPriceParams>,
     ) -> Result<String, String> {
-        self.call(names::ADD_PRICE, p).await
+        self.call(api::ADD_PRICE, p).await
     }
 }
 

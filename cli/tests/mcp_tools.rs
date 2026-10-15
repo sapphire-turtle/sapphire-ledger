@@ -15,11 +15,11 @@ use sapphire_framework::ipc::{self, ClientInfo, Endpoint};
 use sapphire_framework::mcp::ToolContext;
 use sapphire_framework::mcp::rmcp::handler::server::wrapper::Parameters;
 use sapphire_ledger::serve;
-use sapphire_ledger_core::{AppKind, LEDGER_CTX};
-use sapphire_ledger_mcp::LedgerTools;
-use sapphire_ledger_mcp::methods::{
+use sapphire_ledger_api::{
     AddAccountParams, AddTransactionParams, EmptyParams, PostingParam, QueryPostingsParams,
 };
+use sapphire_ledger_core::{AppKind, LEDGER_CTX};
+use sapphire_ledger_mcp::LedgerTools;
 
 async fn wait_until_listening(endpoint: &Endpoint) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
@@ -91,7 +91,7 @@ async fn the_tools_work_on_the_servers_workspace_over_ipc() {
     let tools = LedgerTools::new(ToolContext::dial(
         LEDGER_CTX.app_name,
         serve::VERSION,
-        Some(sapphire_ledger_mcp::APP_API),
+        Some(sapphire_ledger_api::API_VERSION),
         endpoint.clone(),
     ));
 

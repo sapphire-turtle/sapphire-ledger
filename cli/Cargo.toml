@@ -25,6 +25,7 @@ redb-store = [
 ]
 
 [dependencies]
+sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "1.0.0" }
 sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
 sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false }
 sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp"] }

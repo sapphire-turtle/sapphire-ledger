@@ -4709,6 +4709,7 @@ dependencies = [
  "chrono",
  "clap",
  "sapphire-framework",
+ "sapphire-ledger-api",
  "sapphire-ledger-core",
  "sapphire-ledger-mcp",
  "serde",
@@ -4717,6 +4718,18 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "sapphire-ledger-api"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "rust_decimal",
+ "sapphire-framework-server-api",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4743,8 +4756,8 @@ dependencies = [
  "rust_decimal",
  "sapphire-framework",
  "sapphire-ledger",
+ "sapphire-ledger-api",
  "sapphire-ledger-core",
- "sapphire-ledger-mcp",
  "serde",
  "serde_json",
  "tempfile",
@@ -4762,6 +4775,7 @@ dependencies = [
  "rmcp",
  "rust_decimal",
  "sapphire-framework",
+ "sapphire-ledger-api",
  "sapphire-ledger-core",
  "schemars",
  "serde",

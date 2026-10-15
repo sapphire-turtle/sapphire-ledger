@@ -9,10 +9,9 @@ publish = false
 
 [dependencies]
 sapphire-framework = { workspace = true, features = ["gui", "ipc"] }
-# The record types the server's answers deserialize into, and the methods'
-# parameters and names. No store: the desktop reads nothing from disk.
-sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
-sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false }
+# The ledger's methods, their parameters and the records they answer with.
+# Nothing of the files: the desktop reads nothing from disk.
+sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "1.0.0" }
 eframe = "0.36"
 chrono.workspace = true
 rust_decimal.workspace = true
@@ -25,5 +24,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [dev-dependencies]
 # The real server, for the client test: `serve::build()`.
 sapphire-ledger = { path = "../cli", default-features = false }
+sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "time"] }

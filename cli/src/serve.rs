@@ -41,7 +41,7 @@ pub const DEFAULT_HTTP_ADDR: &str = "127.0.0.1:3173";
 /// error instead of the framework's "no server is running".
 pub fn build_oneshot() -> AppServer {
     AppServer::new(&LEDGER_CTX, VERSION)
-        .app_api(sapphire_ledger_mcp::APP_API)
+        .app_api(sapphire_ledger_api::API_VERSION)
         .mcp(sapphire_ledger_mcp::service())
 }
 

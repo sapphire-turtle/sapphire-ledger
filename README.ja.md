@@ -20,6 +20,7 @@ sapphire-ledger/
 ├── cli/                     # 単一バイナリ sapphire-ledger：CLI、アプリサーバー（同期、stdio と /mcp の MCP）
 ├── desktop/                 # デスクトップGUI（egui）。台帳と同期。サーバーのクライアント
 └── crates/
+    ├── sapphire-ledger-api/   # サーバーのメソッドとそのパラメータ・結果の型（クライアントが依存するもの）
     ├── sapphire-ledger-core/  # データモデル、レコードI/O、マイグレーション、検証、書き込みパス
     └── sapphire-ledger-mcp/   # ledger の MCP ツールとサーバー側メソッド（ライブラリ）
 ```
@@ -45,6 +46,7 @@ sapphire-ledger tx list --account Expenses:Food
 
 | コンポーネント | ライセンス |
 |-----------|---------|
+| `sapphire-ledger-api` | MIT OR Apache-2.0 |
 | `sapphire-ledger-core` | MIT OR Apache-2.0 |
 | `sapphire-ledger-mcp` | MIT OR Apache-2.0 |
 | `sapphire-ledger`（`cli/`） | MIT OR Apache-2.0 |

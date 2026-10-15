@@ -13,8 +13,9 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 use rust_decimal::Decimal;
-use sapphire_ledger_core::{Account, ValidationIssue};
-use sapphire_ledger_mcp::methods::{EmptyParams, PostingHit, QueryPostingsParams, names};
+use sapphire_ledger_api::{
+    self as api, Account, EmptyParams, PostingHit, QueryPostingsParams, ValidationIssue,
+};
 
 use crate::client::LedgerClient;
 use crate::form::{self, AccountForm, PostingRow, Status, TxForm};
@@ -128,10 +129,10 @@ impl LedgerView {
         let client = Arc::clone(&self.client);
         self.spawn(async move {
             let books = async {
-                let accounts = client.read(names::LIST_ACCOUNTS, EmptyParams {}).await?;
+                let accounts = client.read(api::LIST_ACCOUNTS, EmptyParams {}).await?;
                 let postings = client
                     .read(
-                        names::QUERY_POSTINGS,
+                        api::QUERY_POSTINGS,
                         QueryPostingsParams {
                             account: None,
                             currency: None,
@@ -140,9 +141,7 @@ impl LedgerView {
                         },
                     )
                     .await?;
-                let issues = client
-                    .read(names::VALIDATE_WORKSPACE, EmptyParams {})
-                    .await?;
+                let issues = client.read(api::VALIDATE_WORKSPACE, EmptyParams {}).await?;
                 Ok(Books {
                     accounts,
                     postings,
@@ -160,7 +159,7 @@ impl LedgerView {
                 let client = Arc::clone(&self.client);
                 self.start_sending();
                 self.spawn(async move {
-                    let result = client.call(names::ADD_TRANSACTION, params).await;
+                    let result = client.call(api::ADD_TRANSACTION, params).await;
                     Reply::Written(Sent::Transaction, result)
                 });
             }
@@ -177,7 +176,7 @@ impl LedgerView {
                 let client = Arc::clone(&self.client);
                 self.start_sending();
                 self.spawn(async move {
-                    let result = client.call(names::ADD_ACCOUNT, params).await;
+                    let result = client.call(api::ADD_ACCOUNT, params).await;
                     Reply::Written(Sent::Account, result)
                 });
             }
@@ -738,7 +737,7 @@ fn today() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sapphire_ledger_core::AccountType;
+    use sapphire_ledger_api::AccountType;
 
     fn account(id: &str, name: &str) -> Account {
         Account {
