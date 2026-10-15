@@ -200,33 +200,20 @@ base_currency = "JPY"
 #[test]
 fn workspace_root_discovery() {
     use std::fs;
-    let tmp = tempdir_in_target();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tmp = dir.path();
     let nested = tmp.join("a/b/c");
     fs::create_dir_all(&nested).unwrap();
     fs::create_dir(tmp.join(".sapphire-ledger")).unwrap();
 
     let found = sapphire_ledger_core::find_workspace_root(&nested).expect("found");
     assert_eq!(found, tmp.canonicalize().unwrap());
-
-    fs::remove_dir_all(&tmp).unwrap();
 }
 
 #[test]
 fn workspace_root_not_found() {
-    use std::fs;
-    let tmp = tempdir_in_target();
-    fs::create_dir_all(&tmp).unwrap();
-    let err = sapphire_ledger_core::find_workspace_root(&tmp).unwrap_err();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tmp = dir.path();
+    let err = sapphire_ledger_core::find_workspace_root(tmp).unwrap_err();
     assert!(format!("{err}").contains("not a sapphire-ledger workspace"));
-    fs::remove_dir_all(&tmp).unwrap();
-}
-
-fn tempdir_in_target() -> std::path::PathBuf {
-    let mut path = std::env::temp_dir();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    path.push(format!("sapphire-ledger-test-{nanos}"));
-    path
 }

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use chrono::NaiveDate;
 
@@ -8,17 +8,6 @@ use sapphire_ledger_core::{
     assertion_relative_path, init_workspace, load_workspace, transaction_relative_path,
     walk_toml_files,
 };
-
-fn tempdir() -> PathBuf {
-    let mut path = std::env::temp_dir();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    path.push(format!("sapphire-ledger-paths-{nanos}"));
-    fs::create_dir_all(&path).unwrap();
-    path
-}
 
 #[test]
 fn account_name_to_path_roundtrip() {
@@ -63,14 +52,15 @@ fn assertion_path_format() {
 
 #[test]
 fn walk_finds_nested_toml_files() {
-    let root = tempdir();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
     fs::create_dir_all(root.join("a/b/c")).unwrap();
     fs::write(root.join("one.toml"), "x = 1").unwrap();
     fs::write(root.join("a/two.toml"), "x = 2").unwrap();
     fs::write(root.join("a/b/c/three.toml"), "x = 3").unwrap();
     fs::write(root.join("a/skip.md"), "not toml").unwrap();
 
-    let files = walk_toml_files(&root).unwrap();
+    let files = walk_toml_files(root).unwrap();
     let mut names: Vec<_> = files
         .iter()
         .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
@@ -78,21 +68,21 @@ fn walk_finds_nested_toml_files() {
     names.sort();
     assert_eq!(names, vec!["one.toml", "three.toml", "two.toml"]);
     assert_eq!(files.len(), 3);
-
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn walk_missing_dir_returns_empty() {
-    let root = tempdir().join("does-not-exist");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("does-not-exist");
     let files = walk_toml_files(&root).unwrap();
     assert!(files.is_empty());
 }
 
 #[test]
 fn init_creates_expected_layout() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
 
     assert!(root.join(".sapphire-ledger").is_dir());
     assert!(root.join(".sapphire-ledger/config.toml").is_file());
@@ -104,22 +94,20 @@ fn init_creates_expected_layout() {
     let gitignore = fs::read_to_string(root.join(".sapphire-ledger/.gitignore")).unwrap();
     assert!(gitignore.contains("cache.sqlite"));
 
-    let workspace: Workspace = load_workspace(&root).unwrap();
+    let workspace: Workspace = load_workspace(root).unwrap();
     assert_eq!(workspace.config.base_currency, "JPY");
     assert!(workspace.accounts.is_empty());
     assert!(workspace.transactions.is_empty());
     assert!(workspace.assertions.is_empty());
-
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn init_refuses_existing_workspace() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    let err = init_workspace(&root, "JPY").unwrap_err();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    let err = init_workspace(root, "JPY").unwrap_err();
     assert!(format!("{err}").contains("already contains"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// `sapphire-ledger workspace init` makes the marker and writes only the
@@ -127,7 +115,8 @@ fn init_refuses_existing_workspace() {
 /// and keeps the registry.
 #[test]
 fn init_completes_a_marker_the_framework_made() {
-    let root = tempdir();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
     fs::create_dir_all(root.join(".sapphire-ledger")).unwrap();
     fs::write(
         root.join(".sapphire-ledger/config.toml"),
@@ -135,9 +124,9 @@ fn init_completes_a_marker_the_framework_made() {
     )
     .unwrap();
 
-    init_workspace(&root, "USD").unwrap();
+    init_workspace(root, "USD").unwrap();
 
-    let workspace: Workspace = load_workspace(&root).unwrap();
+    let workspace: Workspace = load_workspace(root).unwrap();
     assert_eq!(workspace.config.base_currency, "USD");
     assert!(root.join("transactions").is_dir());
     let text = fs::read_to_string(root.join(".sapphire-ledger/config.toml")).unwrap();
@@ -146,15 +135,15 @@ fn init_completes_a_marker_the_framework_made() {
         "the registry must survive: {text}"
     );
 
-    let err = init_workspace(&root, "USD").unwrap_err();
+    let err = init_workspace(root, "USD").unwrap_err();
     assert!(format!("{err}").contains("already contains"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn load_workspace_reads_records() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
 
     fs::create_dir_all(root.join("accounts/Assets/Cash")).unwrap();
     fs::write(
@@ -209,7 +198,7 @@ Split with a colleague.
     )
     .unwrap();
 
-    let workspace = load_workspace(&root).unwrap();
+    let workspace = load_workspace(root).unwrap();
     assert_eq!(workspace.accounts.len(), 2);
     assert_eq!(workspace.transactions.len(), 1);
     assert_eq!(workspace.transactions[0].narration, "lunch");
@@ -229,6 +218,4 @@ Split with a colleague.
         .find(|a| a.id == "acct002")
         .unwrap();
     assert_eq!(food.description, None, "an empty body is no description");
-
-    fs::remove_dir_all(&root).unwrap();
 }
