@@ -143,18 +143,18 @@ fn init_completes_a_marker_the_framework_made() {
 /// `config.toml`; `init` turns that into a ledger too.
 #[test]
 fn init_completes_a_bare_marker() {
-    let root = tempdir();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
     fs::create_dir_all(root.join(".sapphire-ledger")).unwrap();
 
-    init_workspace(&root, "USD").unwrap();
+    init_workspace(root, "USD").unwrap();
 
-    let workspace: Workspace = load_workspace(&root).unwrap();
+    let workspace: Workspace = load_workspace(root).unwrap();
     assert_eq!(workspace.config.base_currency, "USD");
     assert!(root.join("transactions").is_dir());
 
-    let err = init_workspace(&root, "USD").unwrap_err();
+    let err = init_workspace(root, "USD").unwrap_err();
     assert!(format!("{err}").contains("already contains"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
