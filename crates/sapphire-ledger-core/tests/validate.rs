@@ -1,18 +1,6 @@
 use std::fs;
-use std::path::PathBuf;
 
 use sapphire_ledger_core::{Account, Transaction, init_workspace, load_workspace, save_markdown};
-
-fn tempdir() -> PathBuf {
-    let mut path = std::env::temp_dir();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    path.push(format!("sapphire-ledger-validate-{nanos}"));
-    fs::create_dir_all(&path).unwrap();
-    path
-}
 
 // Account and transaction fixtures are spelled in TOML, the shortest way to
 // write a record inline, and stored as the Markdown the ledger reads.
@@ -50,12 +38,13 @@ opened_at = "2026-05-21"
 
 #[test]
 fn clean_workspace_reports_no_issues() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
-    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    write_account(root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     write_transaction(
-        &root,
+        root,
         "transactions/2026/05/tx01.md",
         r#"
 id = "tx01"
@@ -74,18 +63,18 @@ currency = "JPY"
 "#,
     );
 
-    let workspace = load_workspace(&root).unwrap();
+    let workspace = load_workspace(root).unwrap();
     assert!(workspace.validate().is_empty());
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn a_posting_with_account_id_and_a_stale_name_resolves_on_disk() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
     write_transaction(
-        &root,
+        root,
         "transactions/2026/05/idlink.md",
         r#"
 id = "idlink"
@@ -106,21 +95,21 @@ currency = "JPY"
 "#,
     );
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert!(
         issues.is_empty(),
         "account_id must resolve on disk even though account_name is stale: {issues:?}"
     );
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn flags_undefined_account_in_transaction() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
     write_transaction(
-        &root,
+        root,
         "transactions/2026/05/bad01.md",
         r#"
 id = "bad01"
@@ -139,22 +128,22 @@ currency = "JPY"
 "#,
     );
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert_eq!(issues.len(), 1);
     assert!(issues[0].message.contains("undefined account"));
     assert!(issues[0].message.contains("Expenses:Foood"));
     assert_eq!(issues[0].transaction_id.as_deref(), Some("bad01"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn flags_currency_constraint_violation() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
-    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    write_account(root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     write_transaction(
-        &root,
+        root,
         "transactions/2026/05/cur01.md",
         r#"
 id = "cur01"
@@ -173,23 +162,23 @@ currency = "USD"
 "#,
     );
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     // Cash:JPY has currencies=["JPY"], so USD posting is invalid.
     // Expenses:Food has no constraint so its USD posting is fine.
     assert_eq!(issues.len(), 1);
     assert!(issues[0].message.contains("only allows JPY"));
     assert_eq!(issues[0].account.as_deref(), Some("Assets:Cash:JPY"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn flags_unbalanced_transaction() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
-    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    write_account(root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     write_transaction(
-        &root,
+        root,
         "transactions/2026/05/unbal.md",
         r#"
 id = "unbal"
@@ -208,19 +197,19 @@ currency = "JPY"
 "#,
     );
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert_eq!(issues.len(), 1);
     assert!(issues[0].message.contains("does not balance"));
     assert_eq!(issues[0].transaction_id.as_deref(), Some("unbal"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn flags_undefined_account_in_assertion() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
     write_assertion(
-        &root,
+        root,
         "assertions/2026/05/as01.toml",
         r#"
 id = "as01"
@@ -234,21 +223,21 @@ currency = "JPY"
 "#,
     );
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert_eq!(issues.len(), 1);
     assert!(issues[0].message.contains("undefined account"));
     assert_eq!(issues[0].assertion_id.as_deref(), Some("as01"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn reports_multiple_issues_without_short_circuiting() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
     // unbalanced
     write_transaction(
-        &root,
+        root,
         "transactions/2026/05/a.md",
         r#"
 id = "a"
@@ -268,7 +257,7 @@ currency = "JPY"
     );
     // undefined account
     write_transaction(
-        &root,
+        root,
         "transactions/2026/05/b.md",
         r#"
 id = "b"
@@ -287,7 +276,7 @@ currency = "JPY"
 "#,
     );
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert_eq!(issues.len(), 2);
     let ids: Vec<&str> = issues
         .iter()
@@ -295,7 +284,6 @@ currency = "JPY"
         .collect();
     assert!(ids.contains(&"a"));
     assert!(ids.contains(&"b"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 fn write_price(root: &std::path::Path, rel: &str, body: &str) {
@@ -308,10 +296,11 @@ fn write_price(root: &std::path::Path, rel: &str, body: &str) {
 /// accounts applies verbatim to every other kind.
 #[test]
 fn flags_a_duplicate_transaction_id() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
-    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    write_account(root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     let body = |month: &str| {
         format!(
             r#"
@@ -331,21 +320,21 @@ currency = "JPY"
 "#
         )
     };
-    write_transaction(&root, "transactions/2026/05/dup01.md", &body("05"));
-    write_transaction(&root, "transactions/2026/06/dup01.md", &body("06"));
+    write_transaction(root, "transactions/2026/05/dup01.md", &body("05"));
+    write_transaction(root, "transactions/2026/06/dup01.md", &body("06"));
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert_eq!(issues.len(), 1, "issues: {issues:?}");
     assert_eq!(issues[0].message, "duplicate transaction id dup01");
     assert_eq!(issues[0].transaction_id.as_deref(), Some("dup01"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn flags_a_duplicate_assertion_id() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Assets/Cash/JPY.md", ACCOUNT_CASH_JPY);
     let body = |month: &str| {
         format!(
             r#"
@@ -360,20 +349,20 @@ currency = "JPY"
 "#
         )
     };
-    write_assertion(&root, "assertions/2026/05/dupas.toml", &body("05"));
-    write_assertion(&root, "assertions/2026/06/dupas.toml", &body("06"));
+    write_assertion(root, "assertions/2026/05/dupas.toml", &body("05"));
+    write_assertion(root, "assertions/2026/06/dupas.toml", &body("06"));
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert_eq!(issues.len(), 1, "issues: {issues:?}");
     assert_eq!(issues[0].message, "duplicate assertion id dupas");
     assert_eq!(issues[0].assertion_id.as_deref(), Some("dupas"));
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
 fn flags_a_duplicate_price_id() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
     let body = |month: &str| {
         format!(
             r#"
@@ -387,13 +376,12 @@ updated_at = "2026-{month}-15T12:00:00+09:00"
 "#
         )
     };
-    write_price(&root, "prices/2026/05/duppr.toml", &body("05"));
-    write_price(&root, "prices/2026/06/duppr.toml", &body("06"));
+    write_price(root, "prices/2026/05/duppr.toml", &body("05"));
+    write_price(root, "prices/2026/06/duppr.toml", &body("06"));
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert_eq!(issues.len(), 1, "issues: {issues:?}");
     assert_eq!(issues[0].message, "duplicate price id duppr");
-    fs::remove_dir_all(&root).unwrap();
 }
 
 /// Unlike a stale `account_name` on a posting, two accounts sharing a name is
@@ -401,13 +389,14 @@ updated_at = "2026-{month}-15T12:00:00+09:00"
 /// win the `by_name` insert.
 #[test]
 fn flags_a_duplicate_account_name() {
-    let root = tempdir();
-    init_workspace(&root, "JPY").unwrap();
-    write_account(&root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    init_workspace(root, "JPY").unwrap();
+    write_account(root, "accounts/Expenses/Food.md", ACCOUNT_FOOD);
     // Same name, different id, parked at a path that does not match it -- a
     // hand edit or a half-applied rename.
     write_account(
-        &root,
+        root,
         "accounts/Expenses/Groceries.md",
         r#"
 id = "acct003"
@@ -417,9 +406,8 @@ opened_at = "2026-05-21"
 "#,
     );
 
-    let issues = load_workspace(&root).unwrap().validate();
+    let issues = load_workspace(root).unwrap().validate();
     assert_eq!(issues.len(), 1, "issues: {issues:?}");
     assert_eq!(issues[0].message, "duplicate account name Expenses:Food");
     assert_eq!(issues[0].account.as_deref(), Some("Expenses:Food"));
-    fs::remove_dir_all(&root).unwrap();
 }
