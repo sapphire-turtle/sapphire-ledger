@@ -10,14 +10,14 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        // A bare invocation *is* `serve`: what the service manager starts.
-        None | Some(Command::Framework(FrameworkCommand::Serve)) => {
+        // What the service manager starts.
+        Command::Framework(FrameworkCommand::Serve) => {
             sapphire_ledger_core::init_app_context(AppKind::Server);
             runtime()?.block_on(serve::run())
         }
         // `mcp` among them: its stdout is the MCP stream, and the
         // framework's console log goes to stderr (sapphire-framework#232).
-        Some(Command::Framework(command)) => {
+        Command::Framework(command) => {
             sapphire_ledger_core::init_app_context(AppKind::Cli);
             let code =
                 runtime()?.block_on(command.dispatch(serve::build_oneshot(), serve::VERSION))?;
@@ -26,10 +26,10 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Some(Command::Init {
+        Command::Init {
             path,
             base_currency,
-        }) => {
+        } => {
             let target = path.unwrap_or_else(|| PathBuf::from("."));
             sapphire_ledger_core::init_workspace(&target, &base_currency)?;
             println!(
@@ -43,7 +43,7 @@ fn main() -> Result<()> {
             );
             Ok(())
         }
-        Some(Command::Check) => {
+        Command::Check => {
             let root = resolve_root(cli.ledger_dir)?;
             let workspace = sapphire_ledger_core::load_workspace(&root)?;
             let issues = workspace.validate();
@@ -63,14 +63,14 @@ fn main() -> Result<()> {
                 anyhow::bail!("validation failed with {} issue(s)", issues.len());
             }
         }
-        Some(Command::Migrate { dry_run }) => {
+        Command::Migrate { dry_run } => {
             let root = resolve_root(cli.ledger_dir)?;
             commands::migrate(&root, dry_run)
         }
-        Some(Command::Account(c)) => commands::account(c, &resolve_root(cli.ledger_dir)?),
-        Some(Command::Tx(c)) => commands::tx(c, &resolve_root(cli.ledger_dir)?),
-        Some(Command::Assertion(c)) => commands::assertion(c, &resolve_root(cli.ledger_dir)?),
-        Some(Command::Price(c)) => commands::price(c, &resolve_root(cli.ledger_dir)?),
+        Command::Account(c) => commands::account(c, &resolve_root(cli.ledger_dir)?),
+        Command::Tx(c) => commands::tx(c, &resolve_root(cli.ledger_dir)?),
+        Command::Assertion(c) => commands::assertion(c, &resolve_root(cli.ledger_dir)?),
+        Command::Price(c) => commands::price(c, &resolve_root(cli.ledger_dir)?),
     }
 }
 
