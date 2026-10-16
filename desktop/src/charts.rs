@@ -129,7 +129,9 @@ impl ChartsView {
                 ui.spinner();
             }
             Some(report) => {
-                ui.label(summary(report));
+                let today = chrono::Local::now().date_naive();
+                let current = report.month == month_label((today.year(), today.month()));
+                ui.label(summary(report, current));
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.tab, Tab::Pace, "Daily pace");
                     ui.selectable_value(&mut self.tab, Tab::Balance, "Balance path");
@@ -186,6 +188,8 @@ impl ChartsView {
 
     /// Show another budget or month now, not at the next tick.
     fn reload_now(&mut self) {
+        // A load already in flight is for the old budget or month.
+        self.generation.next();
         self.report = None;
         self.loading = false;
         self.last_refresh = None;
@@ -536,7 +540,8 @@ fn pace_series(r: &BudgetReport) -> PaceSeries {
     }
 }
 
-/// `None` when nothing has an actual balance: no accounts to draw.
+/// `None` when the budget has no accounts it is paid from and so no actual
+/// balance: nothing to draw.
 fn balance_series(r: &BudgetReport) -> Option<BalanceSeries> {
     let actual: Vec<[f64; 2]> = r
         .days
@@ -557,8 +562,9 @@ fn balance_series(r: &BudgetReport) -> Option<BalanceSeries> {
 }
 
 /// `9,000 / 100,000 JPY · 3,225.81 / day · 2,548.39 over pace`. The pace
-/// part is left out until a day has elapsed.
-fn summary(r: &BudgetReport) -> String {
+/// part is left out until a day has elapsed, and for any month but the
+/// current one.
+fn summary(r: &BudgetReport, current: bool) -> String {
     let last = r.days.iter().rev().find(|d| d.elapsed);
     let spent = last.map_or("0", |d| d.spent_cumulative.as_str());
     let mut text = format!(
@@ -568,7 +574,7 @@ fn summary(r: &BudgetReport) -> String {
         r.budget.currency,
         grouped(&r.daily_budget),
     );
-    if let Some(d) = last {
+    if let Some(d) = last.filter(|_| current) {
         let ahead = form::parse_amount(&d.budget_cumulative).unwrap_or_default()
             - form::parse_amount(&d.spent_cumulative).unwrap_or_default();
         let word = if ahead < Decimal::ZERO {
@@ -683,11 +689,13 @@ mod tests {
             day(3, "0", "9000", "9677.42", false, None),
         ]);
         assert_eq!(
-            summary(&r),
+            summary(&r, true),
             "9,000 / 100,000 JPY · 3,225.81 / day · 2,548.39 over pace"
         );
+        // Another month has no "today" to be ahead or behind of.
+        assert_eq!(summary(&r, false), "9,000 / 100,000 JPY · 3,225.81 / day");
         let r = report(vec![day(1, "0", "0", "3225.81", false, None)]);
-        assert_eq!(summary(&r), "0 / 100,000 JPY · 3,225.81 / day");
+        assert_eq!(summary(&r, true), "0 / 100,000 JPY · 3,225.81 / day");
     }
 
     #[test]
@@ -697,6 +705,35 @@ mod tests {
         assert_eq!(shift_month((2026, 12), 1), (2027, 1));
         assert_eq!(shift_month((2026, 1), -1), (2025, 12));
         assert_eq!(month_label((2026, 3)), "2026-03");
+    }
+
+    #[test]
+    fn a_load_overtaken_by_a_budget_change_is_dropped() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let endpoint = sapphire_framework::ipc::Endpoint::in_dir(
+            "test",
+            std::env::temp_dir().join("charts-test"),
+        );
+        let client = Arc::new(LedgerClient::new("test", "0.0.0", endpoint));
+        let mut view = ChartsView::new(runtime.handle().clone(), client, Arc::new(|| {}));
+        // A load is in flight, then the user picks another budget.
+        let in_flight = view.generation.next();
+        view.selected = Some("other".into());
+        view.reload_now();
+        let loaded = Loaded {
+            budgets: vec![],
+            accounts: vec![],
+            report: Some(report(vec![])),
+        };
+        view.replies
+            .0
+            .send(Reply::Loaded(in_flight, Ok(Box::new(loaded))))
+            .unwrap();
+        view.drain_replies();
+        assert_eq!(view.selected.as_deref(), Some("other"));
+        assert!(view.report.is_none());
     }
 
     #[test]
