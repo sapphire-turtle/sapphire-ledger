@@ -114,22 +114,29 @@ pure function: `today` is a parameter so tests fix it.
 
 For a month of `n` days:
 
-- `daily_budget = monthly_amount / n`, kept at full `Decimal` precision;
-  displayed values are rounded by the client.
+- `daily_budget = monthly_amount / n`.
+- Every amount the report answers with is rounded to 2 decimal places
+  (midpoint away from zero) and normalized (`100000`, not `100000.00`);
+  the computation itself runs at full `Decimal` precision.
 - A **budget posting** is a posting of a transaction whose tags contain the
   budget's `tag`, to an account of type `Expense`, whose
   `balance_contribution()` is in the budget's `currency`. Its amount is that
   contribution, signed: a refund (negative) reduces spending.
 - `spent(d)` = sum of budget postings dated `d`;
   `spent_cumulative(d)` = sum over the month's days up to and including `d`.
-- `budget_cumulative(d) = daily_budget × day_of_month(d)`.
-- `opening_balance` = sum over `balance_accounts` of postings in `currency`
-  dated before the 1st of the month (by `balance_contribution()`).
+- `budget_cumulative(d) = monthly_amount × day_of_month(d) / n` — multiplied
+  first, so the last day is exactly `monthly_amount`.
+- `opening_balance` = sum over `balance_accounts` of the `amount` of
+  postings whose own `currency` is the budget's, dated before the 1st of the
+  month. A balance is what the account holds, so an inline price does not
+  convert it.
 - `planned_balance(d) = opening_balance − budget_cumulative(d)`.
-- `actual_balance(d)` = sum over `balance_accounts` of postings in
-  `currency` up to and including `d`; `None` for `d > today`, so the line
-  stops at today. For a month wholly in the past every day has a value; for
-  a month wholly in the future none does.
+- `elapsed(d) = d <= today`. Clients draw the actual lines (spent, actual
+  balance) only over elapsed days, so they stop at today.
+- `actual_balance(d)` = the same sum as `opening_balance`, up to and
+  including `d`; `None` when `d` is not elapsed or `balance_accounts` is
+  empty. For a month wholly in the past every day is elapsed; for a month
+  wholly in the future none is.
 
 `days` always holds every day of the month, so the x-axis is the whole month.
 
@@ -190,7 +197,8 @@ pub struct BudgetDay {
     pub spent_cumulative: String,
     pub budget_cumulative: String,
     pub planned_balance: String,
-    pub actual_balance: Option<String>,  // None after today
+    pub elapsed: bool,                   // date <= today
+    pub actual_balance: Option<String>,  // None if not elapsed or no balance accounts
 }
 ```
 
@@ -241,11 +249,15 @@ and its reply-channel pattern; it never blocks.
 - Calls `list_budgets`, then `budget_report` for the chosen budget and month;
   refreshes every 10 s like Ledger, and immediately on a change of budget or
   month or after a budget is saved.
-- **Daily pace**: cumulative budget (dashed line), cumulative spent (solid
-  line), daily spent (bars). **Balance path**: planned balance (dashed),
+- **Daily pace**: cumulative budget (dashed line) and cumulative spent
+  (solid line); beneath it, a shorter plot with its own y-axis and the same
+  linked x-axis shows each day's spending as bars against the daily budget
+  (dashed horizontal line). Two plots, never two y-scales on one. **Balance path**: planned balance (dashed),
   actual balance (solid, to today). Hover shows the day's values; a legend
-  names the series. Colours follow the dataviz skill's palette and validator,
-  readable in light and dark.
+  names the series. Actual = blue (`#2a78d6` light / `#3987e5` dark), budget
+  and plan = orange (`#eb6834` / `#d95926`), dashed; the pair passes the
+  dataviz validator in both modes, and dashed-vs-solid is the secondary
+  encoding.
 - Summary line: spent so far / monthly amount; daily budget; under or over
   pace by `budget_cumulative(today) − spent_cumulative(today)` (for the
   current month only).
