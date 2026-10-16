@@ -16,9 +16,9 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context as _;
 use sapphire_framework::ipc::{RequestCtx, Router, RpcError};
 use sapphire_ledger_api::{
-    self as api, AddAccountParams, AddAssertionParams, AddPriceParams, AddTransactionParams,
-    EmptyParams, GetTransactionParams, PostingHit, PostingParam, QueryPostingsParams,
-    QueryPricesParams,
+    self as api, AddAccountParams, AddAssertionParams, AddBudgetParams, AddPriceParams,
+    AddTransactionParams, BudgetReportParams, EmptyParams, GetTransactionParams, PostingHit,
+    PostingParam, QueryPostingsParams, QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
 };
 use sapphire_ledger_core::{LedgerState, ops};
 use serde::de::DeserializeOwned;
@@ -87,6 +87,31 @@ pub fn register(router: Router, source: StateSource) -> Router {
         api::ADD_ASSERTION,
         &source,
         LedgerMethods::add_assertion,
+    );
+    let router = route(
+        router,
+        api::UPDATE_ACCOUNT,
+        &source,
+        LedgerMethods::update_account,
+    );
+    let router = route(
+        router,
+        api::LIST_BUDGETS,
+        &source,
+        LedgerMethods::list_budgets,
+    );
+    let router = route(router, api::ADD_BUDGET, &source, LedgerMethods::add_budget);
+    let router = route(
+        router,
+        api::UPDATE_BUDGET,
+        &source,
+        LedgerMethods::update_budget,
+    );
+    let router = route(
+        router,
+        api::BUDGET_REPORT,
+        &source,
+        LedgerMethods::budget_report,
     );
     route(router, api::ADD_PRICE, &source, LedgerMethods::add_price)
 }
@@ -249,12 +274,13 @@ fn render_error(e: anyhow::Error) -> String {
 /// already been told either way -- this only affects what the caller reads
 /// back, never whether the write is reported as having happened.
 fn write_result(
+    verb: &str,
     kind: &str,
     id: &str,
     dest: &Path,
     reload_err: Option<sapphire_ledger_core::Error>,
 ) -> String {
-    let mut msg = format!("created {kind} {id}: {}", dest.display());
+    let mut msg = format!("{verb} {kind} {id}: {}", dest.display());
     if let Some(e) = reload_err {
         // Same reason as `render_error`: the path naming the broken file is
         // in the chain, not in the outermost message.
@@ -265,6 +291,33 @@ fn write_result(
         ));
     }
     msg
+}
+
+fn find_budget<'a>(
+    budgets: &'a [sapphire_ledger_core::Budget],
+    needle: &str,
+) -> anyhow::Result<&'a sapphire_ledger_core::Budget> {
+    budgets
+        .iter()
+        .find(|b| b.id == needle)
+        .or_else(|| budgets.iter().find(|b| b.name == needle))
+        .with_context(|| format!("no budget {needle}"))
+}
+
+fn account_refs(
+    needles: Vec<String>,
+    accounts: &[sapphire_ledger_core::Account],
+) -> Vec<sapphire_ledger_core::AccountRef> {
+    needles
+        .iter()
+        .map(|n| {
+            let (account_id, account_name) = split_account_ref(n, accounts);
+            sapphire_ledger_core::AccountRef {
+                account_id,
+                account_name,
+            }
+        })
+        .collect()
 }
 
 fn build_posting(
@@ -449,7 +502,7 @@ impl LedgerMethods {
             // The file exists regardless of whether we could re-read the
             // workspace, so the observer must always hear about it.
             self.notify_write(std::slice::from_ref(&dest));
-            Ok(write_result("account", &id, &dest, reload_err))
+            Ok(write_result("created", "account", &id, &dest, reload_err))
         })()
         .map_err(render_error)
     }
@@ -486,7 +539,13 @@ impl LedgerMethods {
             let reload_err = guard.reload().err();
             drop(guard);
             self.notify_write(std::slice::from_ref(&dest));
-            Ok(write_result("transaction", &id, &dest, reload_err))
+            Ok(write_result(
+                "created",
+                "transaction",
+                &id,
+                &dest,
+                reload_err,
+            ))
         })()
         .map_err(render_error)
     }
@@ -516,7 +575,7 @@ impl LedgerMethods {
             let reload_err = guard.reload().err();
             drop(guard);
             self.notify_write(std::slice::from_ref(&dest));
-            Ok(write_result("assertion", &id, &dest, reload_err))
+            Ok(write_result("created", "assertion", &id, &dest, reload_err))
         })()
         .map_err(render_error)
     }
@@ -532,7 +591,89 @@ impl LedgerMethods {
             let reload_err = guard.reload().err();
             drop(guard);
             self.notify_write(std::slice::from_ref(&dest));
-            Ok(write_result("price", &id, &dest, reload_err))
+            Ok(write_result("created", "price", &id, &dest, reload_err))
+        })()
+        .map_err(render_error)
+    }
+
+    fn update_account(&self, p: UpdateAccountParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let tags = p
+                .default_tags
+                .context("nothing to change: give default_tags")?;
+            let mut guard = self.lock_state();
+            let (id, dest) = ops::update_account(guard.root(), &p.account, tags)?;
+            let reload_err = guard.reload().err();
+            drop(guard);
+            self.notify_write(std::slice::from_ref(&dest));
+            Ok(write_result("updated", "account", &id, &dest, reload_err))
+        })()
+        .map_err(render_error)
+    }
+
+    fn list_budgets(&self, _: EmptyParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let guard = self.lock_state();
+            let budgets: Vec<api::Budget> =
+                guard.workspace().budgets.iter().map(wire::budget).collect();
+            Ok(serde_json::to_string_pretty(&budgets)?)
+        })()
+        .map_err(render_error)
+    }
+
+    fn add_budget(&self, p: AddBudgetParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let amount = parse_decimal(&p.monthly_amount)?;
+            let mut guard = self.lock_state();
+            // See add_transaction: classify references against fresh accounts.
+            guard.reload()?;
+            let refs = account_refs(p.balance_accounts, &guard.workspace().accounts);
+            let (id, dest) =
+                ops::create_budget(guard.root(), p.name, p.tag, p.currency, amount, refs)?;
+            let reload_err = guard.reload().err();
+            drop(guard);
+            self.notify_write(std::slice::from_ref(&dest));
+            Ok(write_result("created", "budget", &id, &dest, reload_err))
+        })()
+        .map_err(render_error)
+    }
+
+    fn update_budget(&self, p: UpdateBudgetParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let monthly_amount = p.monthly_amount.as_deref().map(parse_decimal).transpose()?;
+            let mut guard = self.lock_state();
+            guard.reload()?;
+            let balance_accounts = p
+                .balance_accounts
+                .map(|n| account_refs(n, &guard.workspace().accounts));
+            let changes = ops::BudgetChanges {
+                name: p.name,
+                tag: p.tag,
+                currency: p.currency,
+                monthly_amount,
+                balance_accounts,
+            };
+            let (id, dest) = ops::update_budget(guard.root(), &p.budget, changes)?;
+            let reload_err = guard.reload().err();
+            drop(guard);
+            self.notify_write(std::slice::from_ref(&dest));
+            Ok(write_result("updated", "budget", &id, &dest, reload_err))
+        })()
+        .map_err(render_error)
+    }
+
+    fn budget_report(&self, p: BudgetReportParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let (year, month) = sapphire_ledger_core::report::parse_month(&p.month)?;
+            let guard = self.lock_state();
+            let ws = guard.workspace();
+            let budget = find_budget(&ws.budgets, &p.budget)?;
+            let today = chrono::Local::now().date_naive();
+            let report =
+                sapphire_ledger_core::report::budget_report(ws, budget, year, month, today)?;
+            Ok(serde_json::to_string_pretty(&wire::budget_report(
+                budget, year, month, &report,
+            ))?)
         })()
         .map_err(render_error)
     }
@@ -975,5 +1116,148 @@ postings:
             result.contains("as-broken.toml"),
             "the WARNING must name the file that broke the reload, got: {result}"
         );
+    }
+
+    fn add_budget(server: &LedgerMethods) -> String {
+        server
+            .add_budget(api::AddBudgetParams {
+                name: "生活費".into(),
+                tag: "living".into(),
+                currency: "JPY".into(),
+                monthly_amount: "100000".into(),
+                balance_accounts: vec!["Assets:Cash:JPY".into()],
+            })
+            .expect("add_budget")
+    }
+
+    fn spend(server: &LedgerMethods, date: &str, tags: Vec<String>, amount: &str, apply: bool) {
+        server
+            .add_transaction(AddTransactionParams {
+                date: date.into(),
+                narration: "spend".into(),
+                payee: None,
+                tags,
+                status: None,
+                postings: vec![
+                    posting_param("Expenses:Food", amount),
+                    posting_param("Assets:Cash:JPY", &format!("-{amount}")),
+                ],
+                comment: None,
+                apply_default_tags: apply,
+            })
+            .expect("add_transaction");
+    }
+
+    #[test]
+    fn a_budget_is_listed_and_reported_by_day() {
+        let (_dir, server) = test_server();
+        add_account(&server, "Expenses:Food", "Expense");
+        add_account(&server, "Assets:Cash:JPY", "Asset");
+        assert!(add_budget(&server).contains("created budget"));
+        spend(&server, "2026-05-21", vec!["living".into()], "1200", true);
+
+        let budgets: Vec<api::Budget> =
+            serde_json::from_str(&server.list_budgets(EmptyParams {}).unwrap()).unwrap();
+        assert_eq!(budgets[0].name, "生活費");
+        assert_eq!(
+            budgets[0].balance_accounts[0].account_name.as_deref(),
+            Some("Assets:Cash:JPY")
+        );
+
+        let report: api::BudgetReport = serde_json::from_str(
+            &server
+                .budget_report(api::BudgetReportParams {
+                    budget: "生活費".into(),
+                    month: "2026-05".into(),
+                })
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report.month, "2026-05");
+        assert_eq!(report.daily_budget, "3225.81");
+        assert_eq!(report.days.len(), 31);
+        assert_eq!(report.days[20].spent_cumulative, "1200");
+        assert_eq!(report.days[30].budget_cumulative, "100000");
+        assert_eq!(report.days[20].actual_balance.as_deref(), Some("-1200"));
+    }
+
+    #[test]
+    fn update_budget_changes_the_amount_and_a_bad_month_is_refused() {
+        let (_dir, server) = test_server();
+        add_account(&server, "Assets:Cash:JPY", "Asset");
+        add_budget(&server);
+        let msg = server
+            .update_budget(api::UpdateBudgetParams {
+                budget: "生活費".into(),
+                name: None,
+                tag: None,
+                currency: None,
+                monthly_amount: Some("120000".into()),
+                balance_accounts: None,
+            })
+            .unwrap();
+        assert!(msg.contains("updated budget"), "got: {msg}");
+        let budgets: Vec<api::Budget> =
+            serde_json::from_str(&server.list_budgets(EmptyParams {}).unwrap()).unwrap();
+        assert_eq!(budgets[0].monthly_amount, "120000");
+
+        let err = server
+            .budget_report(api::BudgetReportParams {
+                budget: "生活費".into(),
+                month: "May".into(),
+            })
+            .unwrap_err();
+        assert!(err.contains("YYYY-MM"), "got: {err}");
+        let err = server
+            .budget_report(api::BudgetReportParams {
+                budget: "nope".into(),
+                month: "2026-05".into(),
+            })
+            .unwrap_err();
+        assert!(err.contains("no budget nope"), "got: {err}");
+    }
+
+    #[test]
+    fn default_tags_set_by_update_account_reach_new_transactions() {
+        let (_dir, server) = test_server();
+        add_account(&server, "Expenses:Food", "Expense");
+        add_account(&server, "Assets:Cash:JPY", "Asset");
+        let msg = server
+            .update_account(api::UpdateAccountParams {
+                account: "Expenses:Food".into(),
+                default_tags: Some(vec!["living".into()]),
+            })
+            .unwrap();
+        assert!(msg.contains("updated account"), "got: {msg}");
+        let accounts: Vec<api::Account> =
+            serde_json::from_str(&server.list_accounts(EmptyParams {}).unwrap()).unwrap();
+        let food = accounts.iter().find(|a| a.name == "Expenses:Food").unwrap();
+        assert_eq!(food.default_tags, ["living"]);
+
+        spend(&server, "2026-05-21", vec![], "100", true);
+        spend(&server, "2026-05-22", vec![], "100", false);
+        let state = server.shared_state();
+        let guard = state.lock().unwrap();
+        let mut tags: Vec<Vec<String>> = guard
+            .workspace()
+            .transactions
+            .iter()
+            .map(|t| t.tags.clone())
+            .collect();
+        tags.sort();
+        assert_eq!(tags, vec![vec![], vec!["living".to_string()]]);
+    }
+
+    #[test]
+    fn update_account_with_nothing_to_change_is_refused() {
+        let (_dir, server) = test_server();
+        add_account(&server, "Expenses:Food", "Expense");
+        let err = server
+            .update_account(api::UpdateAccountParams {
+                account: "Expenses:Food".into(),
+                default_tags: None,
+            })
+            .unwrap_err();
+        assert!(err.contains("nothing to change"), "got: {err}");
     }
 }

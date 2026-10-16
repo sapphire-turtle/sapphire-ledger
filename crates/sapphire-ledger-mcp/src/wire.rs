@@ -7,6 +7,52 @@
 use sapphire_ledger_api as api;
 use sapphire_ledger_core as core;
 
+pub fn budget(b: &core::Budget) -> api::Budget {
+    api::Budget {
+        id: b.id.clone(),
+        name: b.name.clone(),
+        tag: b.tag.clone(),
+        currency: b.currency.clone(),
+        monthly_amount: b.monthly_amount.to_string(),
+        balance_accounts: b
+            .balance_accounts
+            .iter()
+            .map(|r| api::AccountRef {
+                account_id: r.account_id.clone(),
+                account_name: r.account_name.clone(),
+            })
+            .collect(),
+    }
+}
+
+pub fn budget_report(
+    b: &core::Budget,
+    year: i32,
+    month: u32,
+    r: &core::report::BudgetReport,
+) -> api::BudgetReport {
+    let amount = |d: rust_decimal::Decimal| core::report::round_amount(d).to_string();
+    api::BudgetReport {
+        budget: budget(b),
+        month: format!("{year:04}-{month:02}"),
+        daily_budget: amount(r.daily_budget),
+        opening_balance: amount(r.opening_balance),
+        days: r
+            .days
+            .iter()
+            .map(|d| api::BudgetDay {
+                date: d.date,
+                spent: amount(d.spent),
+                spent_cumulative: amount(d.spent_cumulative),
+                budget_cumulative: amount(d.budget_cumulative),
+                planned_balance: amount(d.planned_balance),
+                elapsed: d.elapsed,
+                actual_balance: d.actual_balance.map(amount),
+            })
+            .collect(),
+    }
+}
+
 pub fn account(a: &core::Account) -> api::Account {
     api::Account {
         id: a.id.clone(),
@@ -99,7 +145,8 @@ mod tests {
     }
 
     /// The API's records answer with the JSON core's did before they were
-    /// split, so API version 1 is unchanged: every field set, then none.
+    /// split: the API's records still serialize as core's do, every field set,
+    /// then none.
     #[test]
     fn the_wire_records_serialize_as_core_does() {
         let full = core::Account {
