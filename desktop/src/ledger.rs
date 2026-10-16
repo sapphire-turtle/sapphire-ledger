@@ -737,7 +737,7 @@ fn posting_row<'a>(
             for account in accounts {
                 if ui
                     .selectable_value(&mut row.account, account.name.clone(), &account.name)
-                    .clicked()
+                    .changed()
                 {
                     chosen = Some(account);
                 }

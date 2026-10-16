@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
 use sapphire_ledger_api::{
-    AccountType, AddAccountParams, AddTransactionParams, PostingParam, UpdateAccountParams,
+    Account, AccountType, AddAccountParams, AddTransactionParams, PostingParam, UpdateAccountParams,
 };
 
 /// One posting row as typed.
@@ -159,6 +159,21 @@ impl TxForm {
             comment: optional(&self.comment),
         })
     }
+
+    /// Append the `tags` the field does not have yet, keeping what was
+    /// typed: what choosing a posting's account does with its default tags.
+    pub fn add_tags(&mut self, tags: &[String]) {
+        let mut current = split_list(&self.tags);
+        let before = current.len();
+        for tag in tags {
+            if !current.contains(tag) {
+                current.push(tag.clone());
+            }
+        }
+        if current.len() != before {
+            self.tags = current.join(", ");
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -215,23 +230,6 @@ pub fn split_list(raw: &str) -> Vec<String> {
         .collect()
 }
 
-impl TxForm {
-    /// Append the `tags` the field does not have yet, keeping what was
-    /// typed: what choosing a posting's account does with its default tags.
-    pub fn add_tags(&mut self, tags: &[String]) {
-        let mut current = split_list(&self.tags);
-        let before = current.len();
-        for tag in tags {
-            if !current.contains(tag) {
-                current.push(tag.clone());
-            }
-        }
-        if current.len() != before {
-            self.tags = current.join(", ");
-        }
-    }
-}
-
 /// Editing one account's default tags.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TagsForm {
@@ -242,7 +240,7 @@ pub struct TagsForm {
 }
 
 impl TagsForm {
-    pub fn new(account: &sapphire_ledger_api::Account) -> TagsForm {
+    pub fn new(account: &Account) -> TagsForm {
         TagsForm {
             account_id: account.id.clone(),
             account_name: account.name.clone(),
