@@ -33,6 +33,7 @@ use rust_decimal::Decimal;
 
 use crate::account::{Account, AccountType, resolve_account};
 use crate::assertion::{Assertion, Balance};
+use crate::budget::{AccountRef, Budget};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::prices::PriceEntry;
@@ -42,9 +43,9 @@ use crate::repository::{
 };
 use crate::transaction::{Posting, Transaction, TransactionStatus};
 use crate::workspace::{
-    ACCOUNTS_DIR, ASSERTIONS_DIR, CONFIG_FILE, MARKDOWN_EXTENSION, PRICES_DIR, TOML_EXTENSION,
-    TRANSACTIONS_DIR, WORKSPACE_DIR, account_relative_path, assertion_relative_path,
-    price_relative_path, transaction_relative_path,
+    ACCOUNTS_DIR, ASSERTIONS_DIR, BUDGETS_DIR, CONFIG_FILE, MARKDOWN_EXTENSION, PRICES_DIR,
+    TOML_EXTENSION, TRANSACTIONS_DIR, WORKSPACE_DIR, account_relative_path,
+    assertion_relative_path, budget_relative_path, price_relative_path, transaction_relative_path,
 };
 
 /// How many times to re-mint an id when the destination is already taken.
@@ -484,4 +485,162 @@ mod tests {
             "random ids all began with the same character"
         );
     }
+}
+
+/// Every budget on disk, with its path.
+fn load_budgets(root: &Path) -> Result<Vec<(Budget, PathBuf)>> {
+    walk_files(&root.join(BUDGETS_DIR), TOML_EXTENSION)?
+        .into_iter()
+        .map(|p| Ok((load_toml::<Budget>(&p)?, p)))
+        .collect()
+}
+
+/// Resolve a budget's balance accounts to id and current name, refusing an
+/// account that does not exist or cannot hold the budget's currency.
+fn resolve_refs(
+    refs: Vec<AccountRef>,
+    currency: &str,
+    accounts: &[Account],
+) -> Result<Vec<AccountRef>> {
+    let by_id: HashMap<&str, &Account> = accounts.iter().map(|a| (a.id.as_str(), a)).collect();
+    let by_name: HashMap<&str, &Account> = accounts.iter().map(|a| (a.name.as_str(), a)).collect();
+    refs.into_iter()
+        .map(|r| {
+            let account = resolve_account(
+                r.account_id.as_deref(),
+                r.account_name.as_deref(),
+                &by_id,
+                &by_name,
+            )?;
+            if !account.allows_currency(currency) {
+                return Err(Error::Validation(format!(
+                    "{} cannot hold {currency}; it only allows {}",
+                    account.name,
+                    account.currencies.join(", "),
+                )));
+            }
+            Ok(AccountRef {
+                account_id: Some(account.id.clone()),
+                account_name: Some(account.name.clone()),
+            })
+        })
+        .collect()
+}
+
+fn check_budget(budget: &Budget) -> Result<()> {
+    for (field, value) in [
+        ("name", &budget.name),
+        ("tag", &budget.tag),
+        ("currency", &budget.currency),
+    ] {
+        if value.trim().is_empty() {
+            return Err(Error::Validation(format!("a budget needs a {field}")));
+        }
+    }
+    if budget.monthly_amount <= Decimal::ZERO {
+        return Err(Error::Validation(format!(
+            "budget {}: monthly_amount {} is not positive",
+            budget.name, budget.monthly_amount
+        )));
+    }
+    Ok(())
+}
+
+/// Write a new budget. Its name must be unused: it is what people type.
+pub fn create_budget(
+    root: &Path,
+    name: String,
+    tag: String,
+    currency: String,
+    monthly_amount: Decimal,
+    balance_accounts: Vec<AccountRef>,
+) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
+    let existing = load_budgets(root)?;
+    let name = name.trim().to_owned();
+    if existing.iter().any(|(b, _)| b.name == name) {
+        return Err(Error::Validation(format!(
+            "a budget named {name} already exists"
+        )));
+    }
+    let accounts = load_accounts(root)?;
+    let balance_accounts = resolve_refs(balance_accounts, currency.trim(), &accounts)?;
+    let taken: HashSet<&str> = existing.iter().map(|(b, _)| b.id.as_str()).collect();
+    let id = (0..ID_ATTEMPTS)
+        .map(|_| new_random_id())
+        .find(|candidate| !taken.contains(candidate.as_str()))
+        .ok_or_else(|| {
+            Error::Validation(format!(
+                "could not mint a free budget id after {ID_ATTEMPTS} attempts"
+            ))
+        })?;
+    let dest = root.join(budget_relative_path(&id));
+    refuse_existing(&dest)?;
+    let timestamp = now();
+    let budget = Budget {
+        id: id.clone(),
+        name,
+        tag: tag.trim().to_owned(),
+        currency: currency.trim().to_owned(),
+        monthly_amount,
+        created_at: timestamp,
+        updated_at: timestamp,
+        balance_accounts,
+    };
+    check_budget(&budget)?;
+    save_toml(&dest, &budget)?;
+    Ok((id, dest))
+}
+
+/// What `update_budget` changes; `None` leaves a field as it is.
+#[derive(Debug, Default)]
+pub struct BudgetChanges {
+    pub name: Option<String>,
+    pub tag: Option<String>,
+    pub currency: Option<String>,
+    pub monthly_amount: Option<Decimal>,
+    pub balance_accounts: Option<Vec<AccountRef>>,
+}
+
+/// Change an existing budget, found by id or name, in place.
+pub fn update_budget(
+    root: &Path,
+    budget: &str,
+    changes: BudgetChanges,
+) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
+    let existing = load_budgets(root)?;
+    let (mut found, path) = existing
+        .iter()
+        .find(|(b, _)| b.id == budget)
+        .or_else(|| existing.iter().find(|(b, _)| b.name == budget))
+        .cloned()
+        .ok_or_else(|| Error::Validation(format!("no budget {budget}")))?;
+    if let Some(name) = changes.name {
+        let name = name.trim().to_owned();
+        if existing
+            .iter()
+            .any(|(b, _)| b.name == name && b.id != found.id)
+        {
+            return Err(Error::Validation(format!(
+                "a budget named {name} already exists"
+            )));
+        }
+        found.name = name;
+    }
+    if let Some(tag) = changes.tag {
+        found.tag = tag.trim().to_owned();
+    }
+    if let Some(currency) = changes.currency {
+        found.currency = currency.trim().to_owned();
+    }
+    if let Some(amount) = changes.monthly_amount {
+        found.monthly_amount = amount;
+    }
+    let refs = changes.balance_accounts.unwrap_or(found.balance_accounts);
+    found.balance_accounts = resolve_refs(refs, &found.currency, &load_accounts(root)?)?;
+    found.updated_at = now();
+    check_budget(&found)?;
+    save_toml(&path, &found)?;
+    Ok((found.id, path))
 }

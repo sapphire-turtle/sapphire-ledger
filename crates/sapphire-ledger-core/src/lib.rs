@@ -9,6 +9,7 @@
 
 pub mod account;
 pub mod assertion;
+pub mod budget;
 pub mod config;
 pub mod error;
 pub mod migrate;
@@ -22,6 +23,7 @@ pub mod workspace;
 
 pub use account::{Account, AccountType, account_name_segments, describe_ref, resolve_account};
 pub use assertion::{Assertion, Balance};
+pub use budget::{AccountRef, Budget};
 pub use config::{CURRENT_SCHEMA_VERSION, CacheConfig, Config};
 pub use error::{Error, Result};
 pub use migrate::{MigrationReport, migrate_workspace};
@@ -34,8 +36,9 @@ pub use state::LedgerState;
 pub use transaction::{Posting, Transaction, TransactionStatus};
 pub use validate::ValidationIssue;
 pub use workspace::{
-    PRICES_DIR, account_name_from_relative_path, account_relative_path, assertion_relative_path,
-    find_workspace_root, init_workspace, price_relative_path, transaction_relative_path,
+    BUDGETS_DIR, PRICES_DIR, account_name_from_relative_path, account_relative_path,
+    assertion_relative_path, budget_relative_path, find_workspace_root, init_workspace,
+    price_relative_path, transaction_relative_path,
 };
 
 /// Process-wide application context, naming the cache and data directories
