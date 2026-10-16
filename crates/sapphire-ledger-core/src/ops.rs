@@ -263,6 +263,32 @@ pub fn create_account(
     Ok((id, dest))
 }
 
+/// Change an existing account's default tags. `account` is its id or its
+/// name; an id wins over a name, as everywhere else.
+///
+/// The file is rewritten where it is: the path comes from the name, and the
+/// name does not change here.
+pub fn update_account(
+    root: &Path,
+    account: &str,
+    default_tags: Vec<String>,
+) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
+    let loaded: Vec<(Account, PathBuf)> = walk_markdown_files(&root.join(ACCOUNTS_DIR))?
+        .into_iter()
+        .map(|p| Ok((load_markdown::<Account>(&p)?, p)))
+        .collect::<Result<_>>()?;
+    let (mut found, path) = loaded
+        .iter()
+        .find(|(a, _)| a.id == account)
+        .or_else(|| loaded.iter().find(|(a, _)| a.name == account))
+        .cloned()
+        .ok_or_else(|| Error::Validation(format!("no account {account}")))?;
+    found.default_tags = normalize_tags(default_tags);
+    save_markdown(&path, &found)?;
+    Ok((found.id, path))
+}
+
 /// Write a new transaction, resolving and validating before touching disk.
 #[allow(clippy::too_many_arguments)]
 pub fn create_transaction(

@@ -537,3 +537,36 @@ fn an_account_without_default_tags_does_not_write_the_key() {
     let text = std::fs::read_to_string(dir.path().join("accounts/Assets/Cash.md")).unwrap();
     assert!(!text.contains("default_tags"), "got: {text}");
 }
+
+#[test]
+fn update_account_sets_default_tags_by_name_or_id_and_keeps_the_body() {
+    let dir = ws();
+    let (id, path) = ops::create_account(
+        dir.path(),
+        "Expenses:Food".into(),
+        AccountType::Expense,
+        vec![],
+        "2026-01-01".parse().unwrap(),
+        Some("食費".into()),
+        vec![],
+    )
+    .unwrap();
+
+    let (got, at) =
+        ops::update_account(dir.path(), "Expenses:Food", vec!["living".into()]).unwrap();
+    assert_eq!((got.as_str(), &at), (id.as_str(), &path));
+    let account: Account = load_markdown(&path).unwrap();
+    assert_eq!(account.default_tags, ["living"]);
+    assert_eq!(account.description.as_deref(), Some("食費"));
+
+    ops::update_account(dir.path(), &id, vec![]).unwrap();
+    let account: Account = load_markdown(&path).unwrap();
+    assert!(account.default_tags.is_empty());
+}
+
+#[test]
+fn update_account_refuses_an_unknown_account() {
+    let dir = ws();
+    let err = ops::update_account(dir.path(), "Expenses:Nope", vec![]).unwrap_err();
+    assert!(err.to_string().contains("Expenses:Nope"), "got: {err}");
+}
