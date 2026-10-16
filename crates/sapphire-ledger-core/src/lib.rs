@@ -15,6 +15,7 @@ pub mod error;
 pub mod migrate;
 pub mod ops;
 pub mod prices;
+pub mod report;
 pub mod repository;
 pub mod state;
 pub mod transaction;
