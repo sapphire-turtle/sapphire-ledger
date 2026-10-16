@@ -12,6 +12,8 @@ mod client;
 mod form;
 mod ledger;
 
+use std::sync::Arc;
+
 use sapphire_framework::gui::app::{AppOptions, AppSetup};
 use sapphire_framework::gui::client::AppIdentity;
 use sapphire_framework::gui::{Destination, Settings, Shell, eframe, egui};
@@ -52,7 +54,11 @@ fn main() -> eframe::Result<()> {
             .inner_size([1000.0, 640.0])
             .min_inner_size([720.0, 440.0]),
         |setup: AppSetup<'_>| {
-            let ledger_client = LedgerClient::new(APP.app_name, APP.version, setup.endpoints.app);
+            let ledger_client = Arc::new(LedgerClient::new(
+                APP.app_name,
+                APP.version,
+                setup.endpoints.app,
+            ));
             let shell = Shell::new(
                 vec![Destination::new(
                     Screen::Ledger,

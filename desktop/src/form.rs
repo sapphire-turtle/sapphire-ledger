@@ -7,7 +7,9 @@
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
-use sapphire_ledger_api::{AccountType, AddAccountParams, AddTransactionParams, PostingParam};
+use sapphire_ledger_api::{
+    AccountType, AddAccountParams, AddTransactionParams, PostingParam, UpdateAccountParams,
+};
 
 /// One posting row as typed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -130,17 +132,12 @@ impl TxForm {
             return Err(format!("does not balance: off by {}", off.join(", ")));
         }
         Ok(AddTransactionParams {
-            apply_default_tags: true,
+            // The tags field already shows the accounts' defaults; what it shows is what is stored.
+            apply_default_tags: false,
             date: date.to_owned(),
             narration: narration.to_owned(),
             payee: optional(&self.payee),
-            tags: self
-                .tags
-                .split(',')
-                .map(str::trim)
-                .filter(|t| !t.is_empty())
-                .map(str::to_owned)
-                .collect(),
+            tags: split_list(&self.tags),
             status: self.status.param(),
             postings: self
                 .postings
@@ -171,6 +168,8 @@ pub struct AccountForm {
     pub account_type: AccountType,
     /// Comma-separated; empty allows any.
     pub currencies: String,
+    /// Comma-separated; copied into transactions posting here.
+    pub default_tags: String,
     /// `YYYY-MM-DD`.
     pub opened_at: String,
     /// Markdown; the body of the account's file.
@@ -183,6 +182,7 @@ impl AccountForm {
             name: String::new(),
             account_type: AccountType::Expense,
             currencies: String::new(),
+            default_tags: String::new(),
             opened_at,
             description: String::new(),
         }
@@ -196,19 +196,65 @@ impl AccountForm {
             .parse::<chrono::NaiveDate>()
             .map_err(|_| format!("not a YYYY-MM-DD date: {opened_at}"))?;
         Ok(AddAccountParams {
-            default_tags: vec![],
+            default_tags: split_list(&self.default_tags),
             name: name.to_owned(),
             account_type: type_name(self.account_type).to_owned(),
-            currencies: self
-                .currencies
-                .split(',')
-                .map(str::trim)
-                .filter(|c| !c.is_empty())
-                .map(str::to_owned)
-                .collect(),
+            currencies: split_list(&self.currencies),
             opened_at: opened_at.to_owned(),
             description: optional(&self.description),
         })
+    }
+}
+
+/// A comma-separated field as its items: trimmed, empty ones dropped.
+pub fn split_list(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+impl TxForm {
+    /// Append the `tags` the field does not have yet, keeping what was
+    /// typed: what choosing a posting's account does with its default tags.
+    pub fn add_tags(&mut self, tags: &[String]) {
+        let mut current = split_list(&self.tags);
+        let before = current.len();
+        for tag in tags {
+            if !current.contains(tag) {
+                current.push(tag.clone());
+            }
+        }
+        if current.len() != before {
+            self.tags = current.join(", ");
+        }
+    }
+}
+
+/// Editing one account's default tags.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TagsForm {
+    pub account_id: String,
+    pub account_name: String,
+    /// Comma-separated.
+    pub tags: String,
+}
+
+impl TagsForm {
+    pub fn new(account: &sapphire_ledger_api::Account) -> TagsForm {
+        TagsForm {
+            account_id: account.id.clone(),
+            account_name: account.name.clone(),
+            tags: account.default_tags.join(", "),
+        }
+    }
+
+    pub fn to_params(&self) -> UpdateAccountParams {
+        UpdateAccountParams {
+            account: self.account_id.clone(),
+            default_tags: Some(split_list(&self.tags)),
+        }
     }
 }
 
@@ -344,5 +390,59 @@ mod tests {
         assert_eq!(p.account_type, "Asset");
         assert_eq!(p.currencies, ["JPY", "USD"]);
         assert_eq!(p.description, None);
+    }
+
+    #[test]
+    fn choosing_an_account_adds_its_default_tags_once() {
+        let mut form = tx(&[("Expenses:Food", "1", "JPY"), ("Assets:Cash", "-1", "JPY")]);
+        form.tags = "weekly".into();
+        form.add_tags(&["living".into(), "weekly".into()]);
+        assert_eq!(form.tags, "weekly, living");
+        form.add_tags(&["living".into()]);
+        assert_eq!(
+            form.tags, "weekly, living",
+            "nothing new, nothing rewritten"
+        );
+    }
+
+    #[test]
+    fn the_form_sends_its_tags_as_shown() {
+        let mut form = tx(&[("Expenses:Food", "1", "JPY"), ("Assets:Cash", "-1", "JPY")]);
+        form.add_tags(&["living".into()]);
+        form.tags = form.tags.replace("living", "");
+        let p = form.to_params().unwrap();
+        assert_eq!(p.tags, ["food", "weekly"]);
+        assert!(
+            !p.apply_default_tags,
+            "the server must not add back what was removed"
+        );
+    }
+
+    #[test]
+    fn an_account_form_carries_default_tags() {
+        let mut form = AccountForm::new("2026-01-01".into());
+        form.name = "Expenses:Food".into();
+        form.default_tags = "living, , food".into();
+        assert_eq!(form.to_params().unwrap().default_tags, ["living", "food"]);
+    }
+
+    #[test]
+    fn a_tags_form_replaces_the_accounts_default_tags() {
+        let account = sapphire_ledger_api::Account {
+            id: "acc0001".into(),
+            name: "Expenses:Food".into(),
+            account_type: AccountType::Expense,
+            currencies: vec![],
+            opened_at: "2026-01-01".parse().unwrap(),
+            closed_at: None,
+            default_tags: vec!["living".into()],
+            description: None,
+        };
+        let mut form = TagsForm::new(&account);
+        assert_eq!(form.tags, "living");
+        form.tags = "".into();
+        let p = form.to_params();
+        assert_eq!(p.account, "acc0001");
+        assert_eq!(p.default_tags, Some(vec![]));
     }
 }
