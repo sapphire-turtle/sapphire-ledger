@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
 use sapphire_ledger_api::{
-    Account, AccountType, AddAccountParams, AddTransactionParams, PostingParam, UpdateAccountParams,
+    Account, AccountType, AddAccountParams, AddBudgetParams, AddTransactionParams, Budget,
+    PostingParam, UpdateAccountParams, UpdateBudgetParams,
 };
 
 /// One posting row as typed.
@@ -295,6 +296,103 @@ fn optional(value: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// A budget, new or being edited.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BudgetForm {
+    /// The budget being edited; `None` for a new one.
+    pub id: Option<String>,
+    pub name: String,
+    pub tag: String,
+    pub currency: String,
+    pub monthly_amount: String,
+    /// The ids of the accounts it is paid from.
+    pub balance_accounts: Vec<String>,
+}
+
+impl BudgetForm {
+    pub fn new(currency: &str) -> BudgetForm {
+        BudgetForm {
+            id: None,
+            name: String::new(),
+            tag: String::new(),
+            currency: currency.to_owned(),
+            monthly_amount: String::new(),
+            balance_accounts: vec![],
+        }
+    }
+
+    /// Start from `budget`, its account references turned into ids the way
+    /// the server resolves them: by id, else by name.
+    pub fn edit(budget: &Budget, accounts: &[Account]) -> BudgetForm {
+        let balance_accounts = budget
+            .balance_accounts
+            .iter()
+            .filter_map(|r| match &r.account_id {
+                Some(id) => Some(id.clone()),
+                None => accounts
+                    .iter()
+                    .find(|a| Some(a.name.as_str()) == r.account_name.as_deref())
+                    .map(|a| a.id.clone()),
+            })
+            .collect();
+        BudgetForm {
+            id: Some(budget.id.clone()),
+            name: budget.name.clone(),
+            tag: budget.tag.clone(),
+            currency: budget.currency.clone(),
+            monthly_amount: budget.monthly_amount.clone(),
+            balance_accounts,
+        }
+    }
+
+    pub fn toggle(&mut self, id: &str) {
+        match self.balance_accounts.iter().position(|a| a == id) {
+            Some(i) => {
+                self.balance_accounts.remove(i);
+            }
+            None => self.balance_accounts.push(id.to_owned()),
+        }
+    }
+
+    fn checked(&self) -> Result<(String, String, String, String), String> {
+        let name = require(&self.name, "name")?.to_owned();
+        let tag = require(&self.tag, "tag")?.to_owned();
+        let currency = require(&self.currency, "currency")?.to_owned();
+        let amount = parse_amount(&self.monthly_amount)
+            .ok_or_else(|| format!("not a number: {:?}", self.monthly_amount))?;
+        if amount <= Decimal::ZERO {
+            return Err("the monthly amount must be positive".to_owned());
+        }
+        Ok((name, tag, currency, amount.to_string()))
+    }
+
+    pub fn to_add_params(&self) -> Result<AddBudgetParams, String> {
+        let (name, tag, currency, monthly_amount) = self.checked()?;
+        Ok(AddBudgetParams {
+            name,
+            tag,
+            currency,
+            monthly_amount,
+            balance_accounts: self.balance_accounts.clone(),
+        })
+    }
+
+    pub fn to_update_params(&self) -> Result<UpdateBudgetParams, String> {
+        let (name, tag, currency, monthly_amount) = self.checked()?;
+        Ok(UpdateBudgetParams {
+            budget: self
+                .id
+                .clone()
+                .ok_or("this budget has not been created yet")?,
+            name: Some(name),
+            tag: Some(tag),
+            currency: Some(currency),
+            monthly_amount: Some(monthly_amount),
+            balance_accounts: Some(self.balance_accounts.clone()),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,5 +540,57 @@ mod tests {
         let p = form.to_params();
         assert_eq!(p.account, "acc0001");
         assert_eq!(p.default_tags, Some(vec![]));
+    }
+
+    #[test]
+    fn a_budget_form_becomes_add_or_update_parameters() {
+        let mut form = BudgetForm::new("JPY");
+        assert!(form.to_add_params().unwrap_err().contains("name"));
+        form.name = " 生活費 ".into();
+        form.tag = "living".into();
+        form.monthly_amount = "100,000".into();
+        form.toggle("acc0001");
+        form.toggle("acc0002");
+        form.toggle("acc0002");
+        let p = form.to_add_params().unwrap();
+        assert_eq!(
+            (p.name.as_str(), p.monthly_amount.as_str()),
+            ("生活費", "100000")
+        );
+        assert_eq!(p.balance_accounts, ["acc0001"]);
+        form.monthly_amount = "0".into();
+        assert!(form.to_add_params().unwrap_err().contains("positive"));
+    }
+
+    #[test]
+    fn editing_a_budget_starts_from_it_and_updates_every_field() {
+        let accounts = [sapphire_ledger_api::Account {
+            id: "acc0001".into(),
+            name: "Assets:Bank".into(),
+            account_type: AccountType::Asset,
+            currencies: vec![],
+            opened_at: "2026-01-01".parse().unwrap(),
+            closed_at: None,
+            default_tags: vec![],
+            description: None,
+        }];
+        let budget = sapphire_ledger_api::Budget {
+            id: "bud0001".into(),
+            name: "生活費".into(),
+            tag: "living".into(),
+            currency: "JPY".into(),
+            monthly_amount: "100000".into(),
+            // A hand-written budget naming its account only by name.
+            balance_accounts: vec![sapphire_ledger_api::AccountRef {
+                account_id: None,
+                account_name: Some("Assets:Bank".into()),
+            }],
+        };
+        let form = BudgetForm::edit(&budget, &accounts);
+        assert_eq!(form.balance_accounts, ["acc0001"]);
+        let p = form.to_update_params().unwrap();
+        assert_eq!(p.budget, "bud0001");
+        assert_eq!(p.monthly_amount.as_deref(), Some("100000"));
+        assert_eq!(p.balance_accounts, Some(vec!["acc0001".to_string()]));
     }
 }
