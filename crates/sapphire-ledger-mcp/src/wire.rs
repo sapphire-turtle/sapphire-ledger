@@ -108,6 +108,7 @@ mod tests {
             currencies: vec!["USD".into()],
             opened_at: "2026-01-01".parse().unwrap(),
             closed_at: Some("2026-12-31".parse().unwrap()),
+            default_tags: vec![],
             description: Some("cash".into()),
         };
         let bare = core::Account {

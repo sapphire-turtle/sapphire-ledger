@@ -1,5 +1,7 @@
 use rust_decimal::Decimal;
-use sapphire_ledger_core::{AccountType, Balance, Posting, ops};
+use sapphire_ledger_core::{
+    Account, AccountType, Balance, Posting, Transaction, load_markdown, ops,
+};
 
 fn ws() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -15,6 +17,7 @@ fn add_account(root: &std::path::Path, name: &str, ty: AccountType) -> String {
         vec![],
         "2026-01-01".parse().unwrap(),
         None,
+        vec![],
     )
     .expect("create_account");
     id
@@ -41,6 +44,7 @@ fn create_account_writes_the_hierarchical_path_and_mints_an_id() {
         vec![],
         "2026-01-01".parse().unwrap(),
         None,
+        vec![],
     )
     .expect("create");
     assert_eq!(id.chars().count(), 7);
@@ -63,6 +67,7 @@ fn create_account_refuses_a_duplicate_name() {
         vec![],
         "2026-01-01".parse().unwrap(),
         None,
+        vec![],
     )
     .expect_err("must refuse");
     assert!(err.to_string().contains("already exists"), "got: {err}");
@@ -78,6 +83,7 @@ fn create_account_rejects_a_malformed_name() {
         vec![],
         "2026-01-01".parse().unwrap(),
         None,
+        vec![],
     )
     .expect_err("must reject");
     assert!(err.to_string().contains("empty segment"), "got: {err}");
@@ -101,6 +107,7 @@ fn create_transaction_resolves_names_to_ids_on_disk() {
             posting_by_name("Assets:Cash:JPY", "-1200"),
         ],
         None,
+        true,
     )
     .expect("create");
 
@@ -138,6 +145,7 @@ fn create_transaction_rejects_an_unknown_account() {
             posting_by_name("Assets:Cash:JPY", "-1200"),
         ],
         None,
+        true,
     )
     .expect_err("must reject");
     assert!(err.to_string().contains("undefined account"), "got: {err}");
@@ -161,6 +169,7 @@ fn create_transaction_rejects_an_unbalanced_entry_and_writes_nothing() {
             posting_by_name("Assets:Cash:JPY", "-999"),
         ],
         None,
+        true,
     )
     .expect_err("must reject");
     assert!(err.to_string().contains("does not balance"), "got: {err}");
@@ -228,6 +237,7 @@ fn created_records_reload_and_validate_clean() {
             posting_by_name("Assets:Cash:JPY", "-1200"),
         ],
         None,
+        true,
     )
     .expect("create");
 
@@ -259,6 +269,7 @@ fn create_transaction_twice_in_the_same_decisecond_mints_distinct_ids() {
             posting_by_name("Assets:Cash:JPY", "-1200"),
         ],
         None,
+        true,
     )
     .expect("create first");
 
@@ -274,6 +285,7 @@ fn create_transaction_twice_in_the_same_decisecond_mints_distinct_ids() {
             posting_by_name("Assets:Cash:JPY", "-500"),
         ],
         None,
+        true,
     )
     .expect("create second");
 
@@ -293,6 +305,7 @@ fn create_transaction_rejects_a_currency_the_account_does_not_allow() {
         vec!["JPY".into()],
         "2026-01-01".parse().unwrap(),
         None,
+        vec![],
     )
     .expect("create_account");
     add_account(dir.path(), "Expenses:Food", AccountType::Expense);
@@ -316,6 +329,7 @@ fn create_transaction_rejects_a_currency_the_account_does_not_allow() {
             posting_by_name("Expenses:Food", "1000"),
         ],
         None,
+        true,
     )
     .expect_err("must reject");
     assert!(err.to_string().contains("only allows"), "got: {err}");
@@ -331,6 +345,7 @@ fn create_assertion_rejects_a_currency_the_account_does_not_allow() {
         vec!["JPY".into()],
         "2026-01-01".parse().unwrap(),
         None,
+        vec![],
     )
     .expect("create_account");
 
@@ -379,6 +394,7 @@ fn transactions_dated_in_different_months_never_share_an_id() {
                 posting_by_name("Assets:Cash:JPY", "-1200"),
             ],
             None,
+            true,
         )
         .expect("create may");
         let (id_june, _) = ops::create_transaction(
@@ -393,6 +409,7 @@ fn transactions_dated_in_different_months_never_share_an_id() {
                 posting_by_name("Assets:Cash:JPY", "-500"),
             ],
             None,
+            true,
         )
         .expect("create june");
         let after = ops::new_id();
@@ -438,6 +455,7 @@ fn create_account_refuses_a_duplicate_name_parked_at_another_path() {
         vec![],
         "2026-01-01".parse().unwrap(),
         None,
+        vec![],
     )
     .expect_err("a second account named Assets:Foo must be refused");
     let msg = err.to_string();
@@ -449,4 +467,73 @@ fn create_account_refuses_a_duplicate_name_parked_at_another_path() {
         !dir.path().join("accounts/Assets/Foo.toml").exists(),
         "the duplicate was written anyway"
     );
+}
+
+fn food_with_defaults(root: &std::path::Path, defaults: &[&str]) {
+    ops::create_account(
+        root,
+        "Expenses:Food".into(),
+        AccountType::Expense,
+        vec![],
+        "2026-01-01".parse().unwrap(),
+        None,
+        defaults.iter().map(|t| t.to_string()).collect(),
+    )
+    .expect("create_account");
+}
+
+fn groceries(root: &std::path::Path, tags: &[&str], apply: bool) -> Transaction {
+    let (_, dest) = ops::create_transaction(
+        root,
+        "2026-05-21".parse().unwrap(),
+        "groceries".into(),
+        None,
+        tags.iter().map(|t| t.to_string()).collect(),
+        None,
+        vec![
+            posting_by_name("Expenses:Food", "1200"),
+            posting_by_name("Assets:Cash", "-1200"),
+        ],
+        None,
+        apply,
+    )
+    .expect("create_transaction");
+    load_markdown(&dest).expect("read back")
+}
+
+#[test]
+fn a_transaction_takes_its_accounts_default_tags_after_its_own() {
+    let dir = ws();
+    food_with_defaults(dir.path(), &["living", "food"]);
+    add_account(dir.path(), "Assets:Cash", AccountType::Asset);
+    let tx = groceries(dir.path(), &["food", "weekly"], true);
+    assert_eq!(tx.tags, ["food", "weekly", "living"]);
+}
+
+#[test]
+fn default_tags_are_left_out_when_not_applied() {
+    let dir = ws();
+    food_with_defaults(dir.path(), &["living"]);
+    add_account(dir.path(), "Assets:Cash", AccountType::Asset);
+    let tx = groceries(dir.path(), &["weekly"], false);
+    assert_eq!(tx.tags, ["weekly"]);
+}
+
+#[test]
+fn an_accounts_default_tags_are_stored_trimmed_and_once() {
+    let dir = ws();
+    food_with_defaults(dir.path(), &[" living ", "", "living", "food"]);
+    let path = dir.path().join("accounts/Expenses/Food.md");
+    let account: Account = load_markdown(&path).unwrap();
+    assert_eq!(account.default_tags, ["living", "food"]);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("default_tags:"), "got: {text}");
+}
+
+#[test]
+fn an_account_without_default_tags_does_not_write_the_key() {
+    let dir = ws();
+    add_account(dir.path(), "Assets:Cash", AccountType::Asset);
+    let text = std::fs::read_to_string(dir.path().join("accounts/Assets/Cash.md")).unwrap();
+    assert!(!text.contains("default_tags"), "got: {text}");
 }

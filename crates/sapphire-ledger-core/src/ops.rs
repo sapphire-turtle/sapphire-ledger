@@ -173,6 +173,41 @@ fn resolve_postings(postings: Vec<Posting>, accounts: &[Account]) -> Result<Vec<
         .collect()
 }
 
+/// Trim each tag, drop empty ones and repeats, keeping first-seen order.
+pub fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(tags.len());
+    for tag in tags {
+        let tag = tag.trim();
+        if !tag.is_empty() && !out.iter().any(|t| t == tag) {
+            out.push(tag.to_owned());
+        }
+    }
+    out
+}
+
+/// `tags`, then every default tag of every posting's account not already
+/// there, in posting order. The postings must already be resolved.
+fn with_default_tags(
+    mut tags: Vec<String>,
+    postings: &[Posting],
+    accounts: &[Account],
+) -> Vec<String> {
+    for posting in postings {
+        let Some(account) = accounts
+            .iter()
+            .find(|a| posting.account_id.as_deref() == Some(a.id.as_str()))
+        else {
+            continue;
+        };
+        for tag in &account.default_tags {
+            if !tags.contains(tag) {
+                tags.push(tag.clone());
+            }
+        }
+    }
+    tags
+}
+
 /// Write a new account.
 ///
 /// A duplicate name is a hard error. The path comes from the name, so the
@@ -191,6 +226,7 @@ pub fn create_account(
     currencies: Vec<String>,
     opened_at: NaiveDate,
     description: Option<String>,
+    default_tags: Vec<String>,
 ) -> Result<(String, PathBuf)> {
     refuse_other_schema(root)?;
     let dest = root.join(account_relative_path(&name)?);
@@ -220,6 +256,7 @@ pub fn create_account(
         currencies,
         opened_at,
         closed_at: None,
+        default_tags: normalize_tags(default_tags),
         description,
     };
     save_markdown(&dest, &account)?;
@@ -237,10 +274,16 @@ pub fn create_transaction(
     status: Option<TransactionStatus>,
     postings: Vec<Posting>,
     comment: Option<String>,
+    apply_default_tags: bool,
 ) -> Result<(String, PathBuf)> {
     refuse_other_schema(root)?;
     let accounts = load_accounts(root)?;
     let postings = resolve_postings(postings, &accounts)?;
+    let tags = if apply_default_tags {
+        with_default_tags(tags, &postings, &accounts)
+    } else {
+        tags
+    };
 
     let (id, dest) = mint_free_id(root, TRANSACTIONS_DIR, MARKDOWN_EXTENSION, |id| {
         transaction_relative_path(date, id)

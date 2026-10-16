@@ -113,6 +113,7 @@ fn a_v1_ledger_is_refused_until_migrated() {
         vec![],
         "2026-05-21".parse().unwrap(),
         None,
+        vec![],
     )
     .expect_err("a write into a schema-1 ledger must be refused");
     let chain = format!("{err}: {}", std::error::Error::source(&err).unwrap());

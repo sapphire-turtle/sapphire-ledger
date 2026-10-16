@@ -442,6 +442,7 @@ impl LedgerMethods {
                 p.currencies,
                 opened_at,
                 p.description,
+                vec![],
             )?;
             let reload_err = guard.reload().err();
             drop(guard);
@@ -480,6 +481,7 @@ impl LedgerMethods {
                 status,
                 postings,
                 p.comment,
+                true,
             )?;
             let reload_err = guard.reload().err();
             drop(guard);
@@ -612,6 +614,7 @@ postings:
             vec!["JPY".to_string()],
             "2026-01-01".parse().expect("date"),
             None,
+            vec![],
         )
         .expect("create account");
         ops::create_account(
@@ -621,6 +624,7 @@ postings:
             vec!["JPY".to_string()],
             "2026-01-01".parse().expect("date"),
             None,
+            vec![],
         )
         .expect("create account");
 

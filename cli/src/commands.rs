@@ -31,8 +31,15 @@ pub fn account(command: AccountCommand, root: &Path) -> anyhow::Result<()> {
         None => today(),
     };
 
-    let (id, dest) =
-        ops::create_account(root, name, account_type, currencies, opened_at, description)?;
+    let (id, dest) = ops::create_account(
+        root,
+        name,
+        account_type,
+        currencies,
+        opened_at,
+        description,
+        vec![],
+    )?;
     println!("created account {id} at {}", shown(&dest));
     Ok(())
 }
@@ -59,7 +66,7 @@ pub fn tx(command: TxCommand, root: &Path) -> anyhow::Result<()> {
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
             let (id, dest) = ops::create_transaction(
-                root, date, narration, payee, tags, status, postings, comment,
+                root, date, narration, payee, tags, status, postings, comment, true,
             )?;
             println!("created transaction {id} at {}", shown(&dest));
             Ok(())
