@@ -221,7 +221,8 @@ account when it is recorded — on write, not on read, so the file's tags stay
 the whole truth and changing an account's defaults leaves past transactions
 alone. `add_transaction` applies them unless `apply_default_tags` is false; the
 desktop shows them in the form (so they are visible and removable) and sends
-false.
+false. `update_account` (and `update_budget`) rewrite the file from its known
+fields: unknown keys and comments in it are not kept.
 
 `Account::allows_currency(&str)` returns `true` if `currencies` is empty
 or contains the requested currency. The validator uses this to flag
@@ -445,7 +446,8 @@ detected:
 - Two accounts share a `name`. A name-only posting would otherwise resolve
   to whichever of them won the lookup table.
 - Two budgets share an `id` or a `name`; a budget's balance account does not
-  exist; a budget's `monthly_amount` is not positive.
+  exist or is given no account reference at all; a budget's `monthly_amount` is
+  not positive.
 - Two transactions, two assertions or two price entries share an `id`. Ids
   are unique per record kind, not per `{year}/{MM}/` directory; a record
   whose date was corrected moves between directories, and that move is a

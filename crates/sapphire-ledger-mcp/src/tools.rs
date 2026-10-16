@@ -216,7 +216,8 @@ impl LedgerTools {
 
     #[tool(
         description = "Change a budget, by id or name. Only the fields given change; \
-        a new amount also redraws past months."
+        a new amount also redraws past months. The file is rewritten from its known \
+        fields: unknown keys and comments in it are not kept."
     )]
     pub async fn update_budget(
         &self,
@@ -228,7 +229,8 @@ impl LedgerTools {
     #[tool(
         description = "Change an account's default tags, by id or name. Default tags \
         are copied into each transaction recorded afterwards that posts to the \
-        account; past transactions keep the tags they have."
+        account; past transactions keep the tags they have. The file is rewritten from its \
+        known fields: unknown keys and comments in it are not kept."
     )]
     pub async fn update_account(
         &self,
