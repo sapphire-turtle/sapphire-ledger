@@ -130,6 +130,7 @@ impl TxForm {
             return Err(format!("does not balance: off by {}", off.join(", ")));
         }
         Ok(AddTransactionParams {
+            apply_default_tags: true,
             date: date.to_owned(),
             narration: narration.to_owned(),
             payee: optional(&self.payee),
@@ -195,6 +196,7 @@ impl AccountForm {
             .parse::<chrono::NaiveDate>()
             .map_err(|_| format!("not a YYYY-MM-DD date: {opened_at}"))?;
         Ok(AddAccountParams {
+            default_tags: vec![],
             name: name.to_owned(),
             account_type: type_name(self.account_type).to_owned(),
             currencies: self

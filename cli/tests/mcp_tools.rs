@@ -60,6 +60,7 @@ fn posting(account: &str, amount: &str) -> PostingParam {
 
 fn account(name: &str, ty: &str) -> Parameters<AddAccountParams> {
     Parameters(AddAccountParams {
+        default_tags: vec![],
         name: name.into(),
         account_type: ty.into(),
         currencies: vec![],
@@ -126,6 +127,7 @@ async fn the_tools_work_on_the_servers_workspace_over_ipc() {
         .expect("add_account");
     let created = tools
         .add_transaction(Parameters(AddTransactionParams {
+            apply_default_tags: true,
             date: "2026-05-21".into(),
             narration: "groceries".into(),
             payee: None,
@@ -162,6 +164,7 @@ async fn the_tools_work_on_the_servers_workspace_over_ipc() {
     // A refused write comes back as the ledger's reason.
     let err = tools
         .add_transaction(Parameters(AddTransactionParams {
+            apply_default_tags: true,
             date: "2026-05-21".into(),
             narration: "wrong".into(),
             payee: None,

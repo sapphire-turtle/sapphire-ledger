@@ -32,6 +32,9 @@ pub struct Account {
     pub opened_at: NaiveDate,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closed_at: Option<NaiveDate>,
+    /// Tags `add_transaction` adds to a transaction posting to this account.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub default_tags: Vec<String>,
     /// Free-form notes on the account, in Markdown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -133,4 +136,63 @@ pub struct ValidationIssue {
     pub assertion_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+}
+
+/// An account named by id, name or both, as a budget keeps it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountRef {
+    /// The authoritative link to the account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// The account's name as the record has it, which may be stale after a
+    /// rename when `account_id` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_name: Option<String>,
+}
+
+/// One budget, as `list_budgets` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Budget {
+    pub id: String,
+    pub name: String,
+    /// The tag whose transactions count as spending against this budget.
+    pub tag: String,
+    pub currency: String,
+    /// The month's allowance, a decimal as a string.
+    pub monthly_amount: String,
+    /// Accounts whose balance the report shows against the plan.
+    #[serde(default)]
+    pub balance_accounts: Vec<AccountRef>,
+}
+
+/// One day of a [`BudgetReport`]. Amounts are decimals as strings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BudgetDay {
+    pub date: NaiveDate,
+    /// Spent on this day.
+    pub spent: String,
+    /// Spent from the month's start through this day.
+    pub spent_cumulative: String,
+    /// What the budget allows from the month's start through this day.
+    pub budget_cumulative: String,
+    /// The balance if spending followed the budget exactly.
+    pub planned_balance: String,
+    /// Whether the day has passed.
+    pub elapsed: bool,
+    /// The balance accounts' actual balance, for a day that has passed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actual_balance: Option<String>,
+}
+
+/// One budget's month day by day, as `budget_report` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BudgetReport {
+    pub budget: Budget,
+    /// `YYYY-MM`.
+    pub month: String,
+    /// What the budget allows per day.
+    pub daily_budget: String,
+    /// The balance accounts' balance before the month starts.
+    pub opening_balance: String,
+    pub days: Vec<BudgetDay>,
 }

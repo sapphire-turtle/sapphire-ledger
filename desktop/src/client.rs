@@ -174,6 +174,7 @@ mod tests {
                 .call(
                     api::ADD_ACCOUNT,
                     AddAccountParams {
+                        default_tags: vec![],
                         name: name.into(),
                         account_type: ty.into(),
                         currencies: vec![],

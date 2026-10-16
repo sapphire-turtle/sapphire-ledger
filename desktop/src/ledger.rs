@@ -747,6 +747,7 @@ mod tests {
             currencies: vec![],
             opened_at: "2026-01-01".parse().unwrap(),
             closed_at: None,
+            default_tags: vec![],
             description: None,
         }
     }

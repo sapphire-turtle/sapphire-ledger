@@ -4837,7 +4837,7 @@ dependencies = [
 
 [[package]]
 name = "sapphire-ledger-api"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "chrono",
  "rust_decimal",

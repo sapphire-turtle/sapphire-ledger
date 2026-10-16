@@ -442,7 +442,7 @@ impl LedgerMethods {
                 p.currencies,
                 opened_at,
                 p.description,
-                vec![],
+                p.default_tags,
             )?;
             let reload_err = guard.reload().err();
             drop(guard);
@@ -481,7 +481,7 @@ impl LedgerMethods {
                 status,
                 postings,
                 p.comment,
-                true,
+                p.apply_default_tags,
             )?;
             let reload_err = guard.reload().err();
             drop(guard);
@@ -682,6 +682,7 @@ postings:
     fn add_account(server: &LedgerMethods, name: &str, ty: &str) -> String {
         server
             .add_account(AddAccountParams {
+                default_tags: vec![],
                 name: name.into(),
                 account_type: ty.into(),
                 currencies: vec![],
@@ -699,6 +700,7 @@ postings:
 
         let created = server
             .add_transaction(AddTransactionParams {
+                apply_default_tags: true,
                 date: "2026-05-21".into(),
                 narration: "イオン買い物".into(),
                 payee: Some("イオン".into()),
@@ -743,6 +745,7 @@ postings:
 
         server
             .add_transaction(AddTransactionParams {
+                apply_default_tags: true,
                 date: "2026-05-21".into(),
                 narration: "by id".into(),
                 payee: None,
@@ -768,6 +771,7 @@ postings:
 
         let err = server
             .add_transaction(AddTransactionParams {
+                apply_default_tags: true,
                 date: "2026-05-21".into(),
                 narration: "wrong".into(),
                 payee: None,
@@ -788,6 +792,7 @@ postings:
         let (_dir, server) = test_server();
         let err = server
             .add_account(AddAccountParams {
+                default_tags: vec![],
                 name: "Assets:Cash:JPY".into(),
                 account_type: "Bogus".into(),
                 currencies: vec![],
@@ -923,6 +928,7 @@ postings:
 
         let err = server
             .add_transaction(AddTransactionParams {
+                apply_default_tags: true,
                 date: "2026-05-21".into(),
                 narration: "blocked".into(),
                 payee: None,

@@ -19,14 +19,15 @@ pub use sapphire_server_api as server;
 
 mod params;
 pub use params::{
-    AddAccountParams, AddAssertionParams, AddPriceParams, AddTransactionParams, BalanceParam,
-    EmptyParams, GetTransactionParams, PostingParam, QueryPostingsParams, QueryPricesParams,
+    AddAccountParams, AddAssertionParams, AddBudgetParams, AddPriceParams, AddTransactionParams,
+    BalanceParam, BudgetReportParams, EmptyParams, GetTransactionParams, PostingParam,
+    QueryPostingsParams, QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
 };
 
 mod records;
 pub use records::{
-    Account, AccountType, Posting, PostingHit, Price, PriceEntry, Transaction, TransactionStatus,
-    ValidationIssue,
+    Account, AccountRef, AccountType, Budget, BudgetDay, BudgetReport, Posting, PostingHit, Price,
+    PriceEntry, Transaction, TransactionStatus, ValidationIssue,
 };
 
 /// The version of the ledger's API: the methods below and their types,
@@ -69,6 +70,16 @@ pub const ADD_TRANSACTION: &str = "sapphire-ledger.add_transaction";
 pub const ADD_ASSERTION: &str = "sapphire-ledger.add_assertion";
 /// Record an exchange rate; answers with a confirmation to show as it is.
 pub const ADD_PRICE: &str = "sapphire-ledger.add_price";
+/// Change an account's default tags; answers with a confirmation to show as it is.
+pub const UPDATE_ACCOUNT: &str = "sapphire-ledger.update_account";
+/// Every budget, as JSON: a list of [`Budget`].
+pub const LIST_BUDGETS: &str = "sapphire-ledger.list_budgets";
+/// Create a budget; answers with a confirmation to show as it is.
+pub const ADD_BUDGET: &str = "sapphire-ledger.add_budget";
+/// Change a budget; answers with a confirmation to show as it is.
+pub const UPDATE_BUDGET: &str = "sapphire-ledger.update_budget";
+/// One budget's month day by day, as JSON: a [`BudgetReport`].
+pub const BUDGET_REPORT: &str = "sapphire-ledger.budget_report";
 
 #[cfg(test)]
 mod tests {
@@ -76,6 +87,6 @@ mod tests {
 
     #[test]
     fn api_version_is_the_major() {
-        assert_eq!(API_VERSION, 1, "the crate's major is the API version");
+        assert_eq!(API_VERSION, 2, "the crate's major is the API version");
     }
 }

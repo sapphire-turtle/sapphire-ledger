@@ -15,6 +15,7 @@ pub fn account(a: &core::Account) -> api::Account {
         currencies: a.currencies.clone(),
         opened_at: a.opened_at,
         closed_at: a.closed_at,
+        default_tags: a.default_tags.clone(),
         description: a.description.clone(),
     }
 }
@@ -108,12 +109,13 @@ mod tests {
             currencies: vec!["USD".into()],
             opened_at: "2026-01-01".parse().unwrap(),
             closed_at: Some("2026-12-31".parse().unwrap()),
-            default_tags: vec![],
+            default_tags: vec!["living".into()],
             description: Some("cash".into()),
         };
         let bare = core::Account {
             currencies: vec![],
             closed_at: None,
+            default_tags: vec![],
             description: None,
             ..full.clone()
         };
