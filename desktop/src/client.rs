@@ -79,7 +79,7 @@ impl LedgerClient {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
                 format!(
-                    "no {} server is running; start it from the Sync tab, or with `{} serve`",
+                    "no {} server is running; start it from the status bar above, or with `{} serve`",
                     self.app, self.app
                 )
             })?;
