@@ -268,7 +268,8 @@ pub fn create_account(
 /// name; an id wins over a name, as everywhere else.
 ///
 /// The file is rewritten where it is: the path comes from the name, and the
-/// name does not change here.
+/// name does not change here. It is rewritten from the known fields, so
+/// unknown keys and comments in it are not kept.
 pub fn update_account(
     root: &Path,
     account: &str,
@@ -417,76 +418,6 @@ pub fn create_price(
     Ok((id, dest))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashSet;
-
-    #[test]
-    fn both_generators_produce_seven_chars() {
-        assert_eq!(new_id().chars().count(), 7);
-        assert_eq!(new_random_id().chars().count(), 7);
-    }
-
-    /// `mint_free_id` scopes uniqueness to the kind, not to a month directory.
-    ///
-    /// A record dated in May takes an id; a record minted in the same
-    /// decisecond but dated in June asks `new_id()` for the *same* string,
-    /// and its destination path is in a different directory — so only a
-    /// kind-wide check can catch it.
-    ///
-    /// The clock is not controllable, so the round is bracketed with
-    /// `new_id()` and only asserted on when it provably stayed inside one
-    /// decisecond.
-    #[test]
-    fn mint_free_id_will_not_reuse_an_id_from_another_month() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path();
-        let may: NaiveDate = "2026-05-21".parse().unwrap();
-        let june: NaiveDate = "2026-06-03".parse().unwrap();
-
-        let mut sampled = 0usize;
-        for round in 0..40 {
-            let before = new_id();
-            let occupied = root.join(transaction_relative_path(may, &before));
-            std::fs::create_dir_all(occupied.parent().unwrap()).unwrap();
-            std::fs::write(&occupied, "").unwrap();
-
-            let (minted, _) = mint_free_id(root, TRANSACTIONS_DIR, MARKDOWN_EXTENSION, |id| {
-                transaction_relative_path(june, id)
-            })
-            .expect("mint");
-            let after = new_id();
-            if before == after {
-                sampled += 1;
-                assert_ne!(
-                    minted, before,
-                    "minted an id already taken by a record in another month (round {round})"
-                );
-            }
-        }
-        assert!(
-            sampled > 0,
-            "no round stayed inside one decisecond; the collision window was never exercised"
-        );
-    }
-
-    #[test]
-    fn random_ids_vary_in_their_leading_character() {
-        // The whole reason accounts use random(): a burst of ids must not
-        // share a prefix. 200 draws over a 32-char alphabet hitting only one
-        // leading character would be about 1e-300 -- so this is a real signal,
-        // not a flaky threshold.
-        let leads: HashSet<char> = (0..200)
-            .filter_map(|_| new_random_id().chars().next())
-            .collect();
-        assert!(
-            leads.len() > 1,
-            "random ids all began with the same character"
-        );
-    }
-}
-
 /// Every budget on disk, with its path.
 fn load_budgets(root: &Path) -> Result<Vec<(Budget, PathBuf)>> {
     walk_files(&root.join(BUDGETS_DIR), TOML_EXTENSION)?
@@ -602,7 +533,9 @@ pub struct BudgetChanges {
     pub balance_accounts: Option<Vec<AccountRef>>,
 }
 
-/// Change an existing budget, found by id or name, in place.
+/// Change an existing budget, found by id or name, in place. The file is
+/// rewritten from the known fields, so unknown keys and comments in it are
+/// not kept.
 pub fn update_budget(
     root: &Path,
     budget: &str,
@@ -643,4 +576,74 @@ pub fn update_budget(
     check_budget(&found)?;
     save_toml(&path, &found)?;
     Ok((found.id, path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn both_generators_produce_seven_chars() {
+        assert_eq!(new_id().chars().count(), 7);
+        assert_eq!(new_random_id().chars().count(), 7);
+    }
+
+    /// `mint_free_id` scopes uniqueness to the kind, not to a month directory.
+    ///
+    /// A record dated in May takes an id; a record minted in the same
+    /// decisecond but dated in June asks `new_id()` for the *same* string,
+    /// and its destination path is in a different directory — so only a
+    /// kind-wide check can catch it.
+    ///
+    /// The clock is not controllable, so the round is bracketed with
+    /// `new_id()` and only asserted on when it provably stayed inside one
+    /// decisecond.
+    #[test]
+    fn mint_free_id_will_not_reuse_an_id_from_another_month() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let may: NaiveDate = "2026-05-21".parse().unwrap();
+        let june: NaiveDate = "2026-06-03".parse().unwrap();
+
+        let mut sampled = 0usize;
+        for round in 0..40 {
+            let before = new_id();
+            let occupied = root.join(transaction_relative_path(may, &before));
+            std::fs::create_dir_all(occupied.parent().unwrap()).unwrap();
+            std::fs::write(&occupied, "").unwrap();
+
+            let (minted, _) = mint_free_id(root, TRANSACTIONS_DIR, MARKDOWN_EXTENSION, |id| {
+                transaction_relative_path(june, id)
+            })
+            .expect("mint");
+            let after = new_id();
+            if before == after {
+                sampled += 1;
+                assert_ne!(
+                    minted, before,
+                    "minted an id already taken by a record in another month (round {round})"
+                );
+            }
+        }
+        assert!(
+            sampled > 0,
+            "no round stayed inside one decisecond; the collision window was never exercised"
+        );
+    }
+
+    #[test]
+    fn random_ids_vary_in_their_leading_character() {
+        // The whole reason accounts use random(): a burst of ids must not
+        // share a prefix. 200 draws over a 32-char alphabet hitting only one
+        // leading character would be about 1e-300 -- so this is a real signal,
+        // not a flaky threshold.
+        let leads: HashSet<char> = (0..200)
+            .filter_map(|_| new_random_id().chars().next())
+            .collect();
+        assert!(
+            leads.len() > 1,
+            "random ids all began with the same character"
+        );
+    }
 }

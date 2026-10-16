@@ -427,7 +427,7 @@ fn month_plot<'a>(id: &'a str, days: usize) -> Plot<'a> {
         .allow_boxed_zoom(false)
         .include_x(0.5)
         .include_x(days as f64 + 0.5)
-        .include_y(0.0)
+        .y_axis_min_width(72.0)
         .link_axis("budget_month", [true, false])
         .link_cursor("budget_month", [true, false])
         .x_axis_formatter(|mark, _| format!("{}", mark.value.round() as i64))
@@ -450,20 +450,24 @@ fn pace_plots(ui: &mut egui::Ui, report: &BudgetReport, c: Colors) {
     let s = pace_series(report);
     let n = report.days.len();
     let tall = (ui.available_height() * 0.62).max(160.0);
-    month_plot("budget_pace", n).height(tall).show(ui, |p| {
-        p.line(
-            Line::new("Budget so far", PlotPoints::from(s.budget))
-                .color(c.plan)
-                .width(2.0)
-                .style(LineStyle::dashed_loose()),
-        );
-        p.line(
-            Line::new("Spent so far", PlotPoints::from(s.spent))
-                .color(c.actual)
-                .width(2.0),
-        );
-    });
+    month_plot("budget_pace", n)
+        .include_y(0.0)
+        .height(tall)
+        .show(ui, |p| {
+            p.line(
+                Line::new("Budget so far", PlotPoints::from(s.budget))
+                    .color(c.plan)
+                    .width(2.0)
+                    .style(LineStyle::dashed_loose()),
+            );
+            p.line(
+                Line::new("Spent so far", PlotPoints::from(s.spent))
+                    .color(c.actual)
+                    .width(2.0),
+            );
+        });
     month_plot("budget_daily", n)
+        .include_y(0.0)
         .height(ui.available_height().max(100.0))
         .show(ui, |p| {
             let bars = s

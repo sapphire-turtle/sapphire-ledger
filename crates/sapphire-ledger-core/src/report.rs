@@ -63,7 +63,9 @@ pub fn budget_report(
 ) -> Result<BudgetReport> {
     let first = NaiveDate::from_ymd_opt(year, month, 1)
         .ok_or_else(|| Error::Validation(format!("no such month {year}-{month:02}")))?;
-    let next = first + Months::new(1);
+    let next = first
+        .checked_add_months(Months::new(1))
+        .ok_or_else(|| Error::Validation(format!("no such month {year}-{month:02}")))?;
     let n = (next - first).num_days() as usize;
 
     let by_id: HashMap<&str, &Account> = ws.accounts.iter().map(|a| (a.id.as_str(), a)).collect();

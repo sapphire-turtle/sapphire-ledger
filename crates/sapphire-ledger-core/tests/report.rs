@@ -208,3 +208,11 @@ fn an_unresolvable_balance_account_is_skipped() {
     let r = budget_report(&ws, &ws.budgets[0], 2026, 5, d("2026-10-16")).unwrap();
     assert_eq!(r.days[0].actual_balance, Some(dec("0")));
 }
+
+#[test]
+fn a_month_at_the_end_of_the_calendar_is_an_error_not_a_panic() {
+    let books = Books::new(&[]);
+    let ws = books.load();
+    let r = budget_report(&ws, &ws.budgets[0], 262142, 12, d("2026-10-16"));
+    assert!(r.is_err());
+}
