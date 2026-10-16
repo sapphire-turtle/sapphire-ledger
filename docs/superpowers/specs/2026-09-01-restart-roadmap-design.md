@@ -304,6 +304,7 @@ be built *by* the agent once phase 1 lands.
 Explicitly **not** planned, because the chosen reminders do not need them:
 budgets, recurring transaction templates, and spending alerts. If the reminder
 set changes, these come back.
+*(2026-10-16: budgets were built after all — see [budgets and charts](2026-10-16-budgets-and-charts-design.md).)*
 
 ## Issue disposition
 
