@@ -65,6 +65,9 @@ pub enum Command {
     /// Record observed exchange rates.
     #[command(subcommand)]
     Price(PriceCommand),
+    /// Read budgets.
+    #[command(subcommand)]
+    Budget(BudgetCommand),
     /// The framework's verbs: serve, status, service, workspace, workgroup,
     /// device, embedding, external-device, mcp.
     #[command(flatten)]
@@ -181,5 +184,18 @@ pub enum PriceCommand {
         /// Where the rate came from, e.g. `manual`.
         #[arg(long)]
         source: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum BudgetCommand {
+    /// One budget's month, day by day: spent, cumulative spent, cumulative
+    /// budget, planned and actual balance.
+    Report {
+        /// Budget name or id.
+        budget: String,
+        /// `YYYY-MM`. Defaults to this month.
+        #[arg(long, value_name = "MONTH")]
+        month: Option<String>,
     },
 }

@@ -33,6 +33,7 @@ sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp"] }
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
+rust_decimal.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "time"] }
 toml.workspace = true

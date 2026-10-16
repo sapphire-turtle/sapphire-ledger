@@ -4823,6 +4823,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "rust_decimal",
  "sapphire-framework",
  "sapphire-ledger-api",
  "sapphire-ledger-core",
