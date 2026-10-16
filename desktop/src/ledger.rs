@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use eframe::egui;
 use rust_decimal::Decimal;
+use sapphire_framework::gui::egui;
 use sapphire_ledger_api::{
     self as api, Account, EmptyParams, PostingHit, QueryPostingsParams, ValidationIssue,
 };

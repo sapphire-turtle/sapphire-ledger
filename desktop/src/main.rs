@@ -1,4 +1,4 @@
-//! sapphire-ledger's desktop app: the books, and the framework's `SyncPanel`.
+//! sapphire-ledger's desktop app: the books, and the framework's Settings.
 //!
 //! A pure client, like sapphire-sync's: it talks to the service-managed
 //! `sapphire-ledger serve` and `sapphire-bridge` over IPC and never starts
@@ -9,14 +9,11 @@
 
 mod client;
 mod form;
-mod gpu;
 mod ledger;
 
-use std::sync::Arc;
-
-use eframe::egui;
-use sapphire_framework::gui::SyncPanel;
-use sapphire_framework::gui::client::{AppIdentity, ClientConfig, FrameworkClient};
+use sapphire_framework::gui::app::{AppOptions, AppSetup};
+use sapphire_framework::gui::client::AppIdentity;
+use sapphire_framework::gui::{Settings, eframe, egui};
 
 use crate::client::LedgerClient;
 use crate::ledger::LedgerView;
@@ -35,9 +32,7 @@ enum Tab {
 struct App {
     tab: Tab,
     ledger: LedgerView,
-    sync: SyncPanel,
-    // Keeps the clients' background tasks alive for the window's lifetime.
-    _runtime: tokio::runtime::Runtime,
+    sync: Settings,
 }
 
 impl eframe::App for App {
@@ -56,41 +51,17 @@ impl eframe::App for App {
 }
 
 fn main() -> eframe::Result<()> {
-    gpu::init_logging();
-    gpu::install_panic_hook();
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("a tokio runtime");
-    let config = ClientConfig::new(APP).expect("the runtime directory and this executable's path");
-    let ledger_client = LedgerClient::new(APP.app_name, APP.version, config.endpoints.app.clone());
-
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 640.0])
-            .with_min_inner_size([720.0, 440.0])
-            .with_title("Sapphire Ledger"),
-        wgpu_options: gpu::wgpu_options(),
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Sapphire Ledger",
-        options,
-        Box::new(move |cc| {
-            gpu::on_render_state(cc.wgpu_render_state.as_ref());
-            // CJK glyphs from a font the OS already has: nothing is bundled.
-            if sapphire_framework::gui::fonts::install_system_cjk_fallback(&cc.egui_ctx).is_none() {
-                tracing::warn!("no CJK font found on this system; Japanese text will not render");
-            }
-            let ctx = cc.egui_ctx.clone();
-            let repaint: Arc<dyn Fn() + Send + Sync> = Arc::new(move || ctx.request_repaint());
-            let framework = FrameworkClient::spawn(runtime.handle(), config, Arc::clone(&repaint));
-            Ok(Box::new(App {
+    sapphire_framework::gui::app::run(
+        AppOptions::new(APP, "Sapphire Ledger")
+            .inner_size([1000.0, 640.0])
+            .min_inner_size([720.0, 440.0]),
+        |setup: AppSetup<'_>| {
+            let ledger_client = LedgerClient::new(APP.app_name, APP.version, setup.endpoints.app);
+            Box::new(App {
                 tab: Tab::Ledger,
-                ledger: LedgerView::new(runtime.handle().clone(), ledger_client, repaint),
-                sync: SyncPanel::new(framework),
-                _runtime: runtime,
-            }))
-        }),
+                ledger: LedgerView::new(setup.runtime, ledger_client, setup.repaint),
+                sync: Settings::new(setup.framework),
+            })
+        },
     )
 }

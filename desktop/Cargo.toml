@@ -8,18 +8,18 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-sapphire-framework = { workspace = true, features = ["gui", "ipc"] }
+# `eframe`: `gui::app::run` starts the window, and `gui::{eframe, egui}` are the
+# versions it renders with.
+sapphire-framework = { workspace = true, features = ["eframe", "ipc"] }
 # The ledger's methods, their parameters and the records they answer with.
 # Nothing of the files: the desktop reads nothing from disk.
 sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "1.0.0" }
-eframe = "0.36"
 chrono.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 # The real server, for the client test: `serve::build()`.
