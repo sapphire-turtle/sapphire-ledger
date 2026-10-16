@@ -485,8 +485,8 @@ one definition serve both.
 
 ### Tools
 
-Nine tools of the ledger's own, declared in
-[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): five read, four
+Fourteen tools of the ledger's own, declared in
+[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): seven read, seven
 write. Beside them the framework's read-only tools (`status`,
 `workspace_show`, `workspace_search`, `workspace_read_file`,
 `workspace_list_dir`, `workgroup_show`, `device_list`). The framework's raw
@@ -501,10 +501,15 @@ checks can leave the books unbalanced. Descriptions below are the tools' own
 | `query_postings` | Find postings, optionally filtered by account (id or name), currency and date range; each result carries its transaction's id, date and narration. |
 | `query_prices` | Find price-log entries, optionally filtered by base, quote and date range. |
 | `validate_workspace` | Re-read the ledger from disk and report every validation issue. Empty array means consistent; a stale `account_name` alone is NOT an issue. |
-| `add_account` | Create an account. Fails if one with that name already exists. Every account a posting names must be created first. Returns the new account's id. |
-| `add_transaction` | Record a transaction. Postings must sum to zero per currency, and every account named must already exist. Nothing is written if validation fails. |
+| `add_account` | Create an account. Fails if one with that name already exists. Every account a posting names must be created first. Returns the new account's id. `default_tags` are copied into the transactions later recorded against it. |
+| `add_transaction` | Record a transaction. Postings must sum to zero per currency, and every account named must already exist. The posting accounts' default tags are added to `tags` unless `apply_default_tags` is false. Nothing is written if validation fails. |
 | `add_assertion` | Record a balance assertion: what an account should hold at the END of a date. A mismatch is a hard error when the books are checked. |
 | `add_price` | Record an observed exchange rate in the price log: one unit of `base` costs `rate` units of `quote` on `date`. |
+| `list_budgets` | List every budget: name, tag, currency, monthly amount and the accounts it is paid from. |
+| `budget_report` | One budget's month day by day: tagged spending against the even daily budget, and the paid-from balance against plan. |
+| `update_account` | Change an account's default tags; later transactions copy them. |
+| `add_budget` | Create a monthly budget selected by a tag. |
+| `update_budget` | Change a budget's fields; only those given change. |
 
 ### Crate is library-only
 
