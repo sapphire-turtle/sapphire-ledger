@@ -50,16 +50,24 @@ struct Loaded {
     run: Option<Result<PanelRun, String>>,
 }
 
+/// Which form a write came from.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Source {
+    Budget,
+    Panel,
+}
+
 enum Reply {
     Loaded(u64, Result<Box<Loaded>, String>),
-    /// A write finished; on success, select the panel of this name next.
-    Written(Option<String>, Result<String, String>),
+    /// A write from `Source` finished; on success, select the panel of this
+    /// name next.
+    Written(Source, Option<String>, Result<String, String>),
     /// The run of an unsaved definition.
     Preview(u64, Result<PanelRun, String>),
     Deleted(Result<String, String>),
 }
 
-/// What a row's `↑ ↓ ✕` buttons asked for.
+/// What a row's `↑ ↓ ×` buttons asked for.
 #[derive(Clone, Copy)]
 enum Move {
     Up,
@@ -112,6 +120,8 @@ pub struct ChartsView {
     /// The run shown is of the editor's unsaved definition.
     previewing: bool,
     confirm_delete: Option<Panel>,
+    /// A delete is sent and not answered yet.
+    deleting: bool,
 }
 
 /// Whether the body says there are no panels: not while an unsaved
@@ -120,8 +130,13 @@ fn shows_placeholder(no_panels: bool, loading: bool, previewing: bool) -> bool {
     no_panels && !loading && !previewing
 }
 
+/// Panels in the order the list shows them: by name.
+fn sort_by_name(panels: &mut [Panel]) {
+    panels.sort_by(|a, b| a.name.cmp(&b.name));
+}
+
 /// The panel to show: the selected one if it is still there, else the one
-/// just written by name, else the first.
+/// just written by name, else the first (`panels` is sorted by name).
 fn pick(panels: &[Panel], selected: Option<&str>, by_name: Option<&str>) -> Option<String> {
     by_name
         .and_then(|name| panels.iter().find(|p| p.name == name))
@@ -161,6 +176,7 @@ impl ChartsView {
             template_budget: None,
             previewing: false,
             confirm_delete: None,
+            deleting: false,
         }
     }
 
@@ -206,7 +222,8 @@ impl ChartsView {
         let offset = self.offset;
         self.spawn(async move {
             let loaded = async {
-                let panels: Vec<Panel> = client.read(api::LIST_PANELS, EmptyParams {}).await?;
+                let mut panels: Vec<Panel> = client.read(api::LIST_PANELS, EmptyParams {}).await?;
+                sort_by_name(&mut panels);
                 let budgets: Vec<Budget> = client.read(api::LIST_BUDGETS, EmptyParams {}).await?;
                 let accounts: Vec<Account> =
                     client.read(api::LIST_ACCOUNTS, EmptyParams {}).await?;
@@ -267,9 +284,9 @@ impl ChartsView {
             Ok((method, Ok(params))) => {
                 self.sending = true;
                 self.form_error = None;
-                self.spawn(
-                    async move { Reply::Written(select, client.call(method, params).await) },
-                );
+                self.spawn(async move {
+                    Reply::Written(Source::Budget, select, client.call(method, params).await)
+                });
             }
             Ok((_, Err(e))) => self.form_error = Some(e.to_string()),
             Err(e) => self.form_error = Some(e),
@@ -338,15 +355,16 @@ impl ChartsView {
             Ok((method, params)) => {
                 self.sending = true;
                 self.form_error = None;
-                self.spawn(
-                    async move { Reply::Written(select, client.call(method, params).await) },
-                );
+                self.spawn(async move {
+                    Reply::Written(Source::Panel, select, client.call(method, params).await)
+                });
             }
             Err(e) => self.form_error = Some(e.to_string()),
         }
     }
 
     fn delete_panel(&mut self, panel: String) {
+        self.deleting = true;
         let client = Arc::clone(&self.client);
         self.spawn(async move {
             Reply::Deleted(match serde_json::to_value(DeletePanelParams { panel }) {
@@ -372,6 +390,7 @@ impl ChartsView {
                 Reply::Loaded(_, Ok(loaded)) => {
                     let loaded = *loaded;
                     self.panels = loaded.panels;
+                    sort_by_name(&mut self.panels);
                     self.budgets = loaded.budgets;
                     self.accounts = loaded.accounts;
                     self.selected = loaded.shown;
@@ -388,6 +407,7 @@ impl ChartsView {
                 Reply::Preview(n, _) if !self.generation.is_current(n) => {}
                 Reply::Preview(_, run) => self.run = Some(run),
                 Reply::Deleted(Ok(_)) => {
+                    self.deleting = false;
                     self.selected = None;
                     let deleted = self.confirm_delete.take();
                     if let (Some(p), Some(form)) = (&deleted, &self.editor)
@@ -398,16 +418,26 @@ impl ChartsView {
                     self.previewing = false;
                     self.reload_now();
                 }
-                Reply::Deleted(Err(e)) => self.form_error = Some(e),
-                Reply::Written(select, Ok(_)) => {
+                Reply::Deleted(Err(e)) => {
+                    self.deleting = false;
+                    self.form_error = Some(e);
+                }
+                Reply::Written(source, select, Ok(_)) => {
                     self.sending = false;
-                    self.budget_form = None;
-                    self.editor = None;
-                    self.previewing = false;
+                    match source {
+                        Source::Budget => self.budget_form = None,
+                        Source::Panel => {
+                            self.editor = None;
+                            self.previewing = false;
+                        }
+                    }
                     self.select_name = select;
+                    if self.select_name.is_some() {
+                        self.offset = 0;
+                    }
                     self.reload_now();
                 }
-                Reply::Written(_, Err(e)) => {
+                Reply::Written(_, _, Err(e)) => {
                     self.sending = false;
                     self.form_error = Some(e);
                 }
@@ -419,10 +449,8 @@ impl ChartsView {
 
     fn panel_list(&mut self, ui: &mut egui::Ui) {
         ui.heading("Panels");
-        let mut sorted: Vec<&Panel> = self.panels.iter().collect();
-        sorted.sort_by(|a, b| a.name.cmp(&b.name));
         let mut clicked = None;
-        for p in sorted {
+        for p in &self.panels {
             let on = self.selected.as_deref() == Some(p.id.as_str());
             if ui.selectable_label(on, &p.name).clicked() {
                 clicked = Some(p.id.clone());
@@ -543,7 +571,9 @@ impl ChartsView {
                     ui.colored_label(ui.visuals().error_fg_color, e);
                 }
                 ui.horizontal(|ui| {
-                    delete = ui.button("Delete").clicked();
+                    delete = ui
+                        .add_enabled(!self.deleting, egui::Button::new("Delete"))
+                        .clicked();
                     cancel = ui.button("Cancel").clicked();
                 });
             });
@@ -579,7 +609,7 @@ impl ChartsView {
                         self.template_row(ui, &mut form);
                         ui.separator();
                         panel_fields(ui, &mut form);
-                        plot_rows(ui, &mut form, &self.budgets, &choices);
+                        plot_rows(ui, &mut form, &self.budgets, &self.accounts, &choices);
                         if ui.button("Add plot").clicked() {
                             form.plots.push(PlotRow::new());
                         }
@@ -857,17 +887,18 @@ fn pick_one<T: Copy + PartialEq>(
         });
 }
 
-/// `↑ ↓ ✕` for one row of a list of `len`.
+/// `↑ ↓ ×` for one row of a list of `len`.
 fn move_buttons(ui: &mut egui::Ui, len: usize) -> Option<Move> {
     let mut action = None;
-    if ui.small_button("↑").clicked() {
+    if ui.small_button("↑").on_hover_text("Move up").clicked() {
         action = Some(Move::Up);
     }
-    if ui.small_button("↓").clicked() {
+    if ui.small_button("↓").on_hover_text("Move down").clicked() {
         action = Some(Move::Down);
     }
     if ui
-        .add_enabled(len > 1, egui::Button::new("✕").small())
+        .add_enabled(len > 1, egui::Button::new("×").small())
+        .on_hover_text("Remove")
         .clicked()
     {
         action = Some(Move::Remove);
@@ -912,7 +943,13 @@ fn panel_fields(ui: &mut egui::Ui, form: &mut PanelForm) {
         });
 }
 
-fn plot_rows(ui: &mut egui::Ui, form: &mut PanelForm, budgets: &[Budget], choices: &[String]) {
+fn plot_rows(
+    ui: &mut egui::Ui,
+    form: &mut PanelForm,
+    budgets: &[Budget],
+    accounts: &[Account],
+    choices: &[String],
+) {
     let plot_count = form.plots.len();
     let mut plot_move = None;
     for (pi, plot) in form.plots.iter_mut().enumerate() {
@@ -932,7 +969,9 @@ fn plot_rows(ui: &mut egui::Ui, form: &mut PanelForm, budgets: &[Budget], choice
             let mut series_move = None;
             for (si, row) in plot.series.iter_mut().enumerate() {
                 ui.group(|ui| {
-                    if let Some(m) = series_row(ui, (pi, si), row, series_count, budgets, choices) {
+                    if let Some(m) =
+                        series_row(ui, (pi, si), row, series_count, budgets, accounts, choices)
+                    {
                         series_move = Some((si, m));
                     }
                 });
@@ -950,12 +989,43 @@ fn plot_rows(ui: &mut egui::Ui, form: &mut PanelForm, budgets: &[Budget], choice
     }
 }
 
+/// The `accounts` entries that are not one of the menu's `choices`.
+fn unlisted_entries(entries: &[String], choices: &[String]) -> Vec<String> {
+    entries
+        .iter()
+        .filter(|e| !choices.contains(e))
+        .cloned()
+        .collect()
+}
+
+/// An unlisted entry as the menu shows it: the account it is the id of, with
+/// the id, else the entry itself.
+fn entry_label(entry: &str, accounts: &[Account]) -> String {
+    match accounts.iter().find(|a| a.id == entry) {
+        Some(a) => format!("{} (id {entry})", a.name),
+        None => entry.to_owned(),
+    }
+}
+
+/// Whether a series' `budget` field (an id or a name) names `b`.
+fn is_budget(b: &Budget, field: &str) -> bool {
+    b.id == field || b.name == field
+}
+
+/// The budget combo's selected text.
+fn budget_text<'a>(budgets: &'a [Budget], field: Option<&str>) -> &'a str {
+    field
+        .and_then(|f| budgets.iter().find(|b| is_budget(b, f)))
+        .map_or("choose", |b| b.name.as_str())
+}
+
 fn series_row(
     ui: &mut egui::Ui,
     at: (usize, usize),
     row: &mut SeriesRow,
     count: usize,
     budgets: &[Budget],
+    accounts: &[Account],
     choices: &[String],
 ) -> Option<Move> {
     let mut action = None;
@@ -984,6 +1054,17 @@ fn series_row(
                                     } else {
                                         row.accounts.retain(|a| a != name);
                                     }
+                                }
+                            }
+                            // Entries the menu does not list, such as account
+                            // ids: shown checked so they can be removed.
+                            for entry in unlisted_entries(&row.accounts, choices) {
+                                let mut on = true;
+                                if ui
+                                    .checkbox(&mut on, entry_label(&entry, accounts))
+                                    .changed()
+                                {
+                                    row.accounts.retain(|a| *a != entry);
                                 }
                             }
                         });
@@ -1036,15 +1117,15 @@ fn series_row(
         Measure::Budget => {
             ui.horizontal(|ui| {
                 ui.label("Budget");
-                let chosen = budgets
-                    .iter()
-                    .find(|b| row.budget.as_deref() == Some(b.id.as_str()))
-                    .map_or("choose", |b| b.name.as_str());
+                let chosen = budget_text(budgets, row.budget.as_deref());
                 egui::ComboBox::from_id_salt(("series_budget", at))
                     .selected_text(chosen)
                     .show_ui(ui, |ui| {
                         for b in budgets {
-                            ui.selectable_value(&mut row.budget, Some(b.id.clone()), &b.name);
+                            let on = row.budget.as_deref().is_some_and(|f| is_budget(b, f));
+                            if ui.selectable_label(on, &b.name).clicked() {
+                                row.budget = Some(b.id.clone());
+                            }
                         }
                     });
                 ui.label("Line");
@@ -1435,6 +1516,9 @@ mod tests {
         );
         assert_eq!(pick(&panels, Some("p1"), None), Some("p1".to_string()));
         assert_eq!(pick(&panels, Some("gone"), None), Some("p1".to_string()));
+        let mut unsorted = vec![panel("p9", "Zed"), panel("p1", "Alpha")];
+        sort_by_name(&mut unsorted);
+        assert_eq!(pick(&unsorted, None, None), Some("p1".to_string()));
         assert_eq!(pick(&[], None, None), None);
     }
 
@@ -1445,6 +1529,7 @@ mod tests {
         view.replies
             .0
             .send(Reply::Written(
+                Source::Panel,
                 Some("New".into()),
                 Ok("created panel".into()),
             ))
@@ -1482,5 +1567,120 @@ mod tests {
         view.drain_replies();
         assert!(!view.previewing);
         assert!(view.editor.is_none());
+    }
+
+    #[test]
+    fn a_write_closes_only_its_own_form() {
+        let (_rt, mut view) = view();
+        let send = |view: &ChartsView, source| {
+            view.replies
+                .0
+                .send(Reply::Written(source, None, Ok("ok".into())))
+                .unwrap();
+        };
+        let open = |view: &mut ChartsView| {
+            view.budget_form = Some(BudgetForm::new("JPY"));
+            view.editor = Some(PanelForm::new());
+            view.previewing = true;
+        };
+        open(&mut view);
+        send(&view, Source::Budget);
+        view.drain_replies();
+        assert!(view.budget_form.is_none());
+        assert!(view.editor.is_some() && view.previewing);
+
+        open(&mut view);
+        send(&view, Source::Panel);
+        view.drain_replies();
+        assert!(view.budget_form.is_some());
+        assert!(view.editor.is_none() && !view.previewing);
+    }
+
+    #[test]
+    fn a_write_that_selects_a_panel_returns_to_the_current_period() {
+        let (_rt, mut view) = view();
+        view.offset = -3;
+        view.replies
+            .0
+            .send(Reply::Written(Source::Panel, None, Ok("ok".into())))
+            .unwrap();
+        view.drain_replies();
+        assert_eq!(view.offset, -3);
+        view.replies
+            .0
+            .send(Reply::Written(
+                Source::Panel,
+                Some("New".into()),
+                Ok("ok".into()),
+            ))
+            .unwrap();
+        view.drain_replies();
+        assert_eq!(view.offset, 0);
+    }
+
+    #[test]
+    fn a_delete_is_in_flight_until_it_is_answered() {
+        let (_rt, mut view) = view();
+        view.deleting = true;
+        view.replies
+            .0
+            .send(Reply::Deleted(Err("nope".into())))
+            .unwrap();
+        view.drain_replies();
+        assert!(!view.deleting);
+        view.deleting = true;
+        view.replies
+            .0
+            .send(Reply::Deleted(Ok("deleted".into())))
+            .unwrap();
+        view.drain_replies();
+        assert!(!view.deleting);
+    }
+
+    fn account(id: &str, name: &str) -> Account {
+        Account {
+            id: id.into(),
+            name: name.into(),
+            account_type: AccountType::Asset,
+            currencies: vec![],
+            opened_at: d("2026-01-01"),
+            closed_at: None,
+            default_tags: vec![],
+            description: None,
+        }
+    }
+
+    fn budget(id: &str, name: &str) -> Budget {
+        Budget {
+            id: id.into(),
+            name: name.into(),
+            tag: "t".into(),
+            currency: "JPY".into(),
+            monthly_amount: "1".into(),
+            balance_accounts: vec![],
+        }
+    }
+
+    #[test]
+    fn an_account_filter_stored_as_an_id_is_listed_with_its_name() {
+        let accounts = [account("4h6j2k9", "Assets:Bank")];
+        let choices = form::account_choices(&accounts);
+        let entries = vec!["Assets".to_string(), "4h6j2k9".into(), "gone".into()];
+        let unlisted = unlisted_entries(&entries, &choices);
+        assert_eq!(unlisted, ["4h6j2k9", "gone"]);
+        assert_eq!(
+            entry_label("4h6j2k9", &accounts),
+            "Assets:Bank (id 4h6j2k9)"
+        );
+        assert_eq!(entry_label("gone", &accounts), "gone");
+    }
+
+    #[test]
+    fn the_budget_combo_matches_an_id_or_a_name() {
+        let budgets = [budget("b1", "living"), budget("b2", "play")];
+        assert_eq!(budget_text(&budgets, Some("b2")), "play");
+        assert_eq!(budget_text(&budgets, Some("living")), "living");
+        assert_eq!(budget_text(&budgets, Some("nope")), "choose");
+        assert_eq!(budget_text(&budgets, None), "choose");
     }
 }
