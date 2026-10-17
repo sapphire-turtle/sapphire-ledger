@@ -17,6 +17,7 @@ pub mod ops;
 pub mod prices;
 pub mod report;
 pub mod repository;
+pub mod series;
 pub mod state;
 pub mod transaction;
 pub mod validate;
