@@ -149,6 +149,10 @@ pub struct AddBudgetParams {
     /// Accounts (id or name) whose balance the report shows against the plan.
     #[serde(default)]
     pub balance_accounts: Vec<String>,
+    /// Also create the panels `<name> pace` and, when it has balance
+    /// accounts, `<name> balance`. If either name is taken, nothing is written.
+    #[serde(default)]
+    pub create_panels: bool,
 }
 
 /// The budget's id or name, and the fields to change; a field left out stays as it is.

@@ -374,6 +374,7 @@ impl BudgetForm {
             currency,
             monthly_amount,
             balance_accounts: self.balance_accounts.clone(),
+            create_panels: false,
         })
     }
 

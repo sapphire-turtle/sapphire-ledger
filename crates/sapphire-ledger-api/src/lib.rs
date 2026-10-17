@@ -24,6 +24,15 @@ pub use params::{
     QueryPostingsParams, QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
 };
 
+mod series;
+pub use series::{
+    AddPanelParams, BudgetLine, DeletePanelParams, GroupBy, Interval, Mark, Measure, Panel,
+    PanelDefinition, PanelRun, PanelSeries, Period, Plot, PlotRun, QuerySeriesParams,
+    RunPanelParams, SeriesData, SeriesQuery, SeriesResult, SeriesRun, UpdatePanelParams,
+};
+
+pub mod templates;
+
 mod records;
 pub use records::{
     Account, AccountRef, AccountType, Budget, BudgetDay, BudgetReport, Posting, PostingHit, Price,
@@ -78,6 +87,18 @@ pub const LIST_BUDGETS: &str = "sapphire-ledger.list_budgets";
 pub const ADD_BUDGET: &str = "sapphire-ledger.add_budget";
 /// Change a budget; answers with a confirmation to show as it is.
 pub const UPDATE_BUDGET: &str = "sapphire-ledger.update_budget";
+/// A series query, as JSON: a [`SeriesResult`].
+pub const QUERY_SERIES: &str = "sapphire-ledger.query_series";
+/// Every panel, as JSON: a list of [`Panel`].
+pub const LIST_PANELS: &str = "sapphire-ledger.list_panels";
+/// A panel's queries run, as JSON: a [`PanelRun`].
+pub const RUN_PANEL: &str = "sapphire-ledger.run_panel";
+/// Save a panel; answers with a confirmation to show as it is.
+pub const ADD_PANEL: &str = "sapphire-ledger.add_panel";
+/// Replace a panel's definition; answers with a confirmation to show as it is.
+pub const UPDATE_PANEL: &str = "sapphire-ledger.update_panel";
+/// Remove a panel; answers with a confirmation to show as it is.
+pub const DELETE_PANEL: &str = "sapphire-ledger.delete_panel";
 /// One budget's month day by day, as JSON: a [`BudgetReport`].
 pub const BUDGET_REPORT: &str = "sapphire-ledger.budget_report";
 

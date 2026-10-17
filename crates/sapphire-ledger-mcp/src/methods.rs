@@ -1126,6 +1126,7 @@ postings:
                 currency: "JPY".into(),
                 monthly_amount: "100000".into(),
                 balance_accounts: vec!["Assets:Cash:JPY".into()],
+                create_panels: false,
             })
             .expect("add_budget")
     }

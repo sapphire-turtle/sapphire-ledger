@@ -169,6 +169,7 @@ async fn the_tools_work_on_the_servers_workspace_over_ipc() {
             currency: "JPY".into(),
             monthly_amount: "100000".into(),
             balance_accounts: vec!["Assets:Cash".into()],
+            create_panels: false,
         }))
         .await
         .expect("add_budget");
