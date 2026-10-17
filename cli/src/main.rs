@@ -71,7 +71,7 @@ fn main() -> Result<()> {
         Command::Tx(c) => commands::tx(c, &resolve_root(cli.ledger_dir)?),
         Command::Assertion(c) => commands::assertion(c, &resolve_root(cli.ledger_dir)?),
         Command::Price(c) => commands::price(c, &resolve_root(cli.ledger_dir)?),
-        Command::Budget(c) => commands::budget(c, &resolve_root(cli.ledger_dir)?),
+        Command::Panel(c) => commands::panel(c, &resolve_root(cli.ledger_dir)?),
     }
 }
 
