@@ -52,6 +52,17 @@ sapphire-ledger tx list --account Expenses:Food
 plus `assertion add` and `price add` — all thin wrappers over the same
 `core::ops` the MCP tools use, so the rules are identical whoever is typing.
 
+The desktop's **Charts** screen (on the left rail) lists saved *panels* and
+draws the selected one: a panel is a chart saved as data in `panels/{id}.toml`
+(its period and the queries of each plot), so a new chart is a new file, not a
+new feature. A new budget makes its pace and balance panels, and **New panel**
+offers templates (budget pace, expenses by account, net worth, income and
+expenses) to start an editor from. AI agents use the same panels as query
+presets: `list_panels` shows them, `run_panel` runs one, and `query_series`
+covers what none fits. On the command line, `sapphire-ledger panel list` and
+`sapphire-ledger panel run <name>` print them as tables (`panel run` replaces
+`budget report`).
+
 A ledger made by an older build (every record TOML) has to be upgraded once
 with `sapphire-ledger migrate` (`--dry-run` to preview); commit it first.
 

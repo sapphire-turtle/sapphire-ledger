@@ -382,28 +382,122 @@ account_name = "Assets:Bank:Living"
 drawing. References follow the account-reference rules. `name` is unique among
 budgets because it is what people type.
 
-`core::report::budget_report(ws, budget, month, today)` is a pure function —
-`today` is a parameter so tests can fix it. For a month of `n` days:
+A budget is drawn by panels, not by a report of its own: the `budget` measure
+of the [series query](#series-query-seriesrs) gives its two lines, `pace`
+(the monthly amount spread over each month's days) and `remaining` (the
+paid-from balance against that pace). `add_budget` with `create_panels` also
+makes the panels `<name> pace` and `<name> balance` from the templates below;
+the latter only when the budget has balance accounts. The earlier
+`budget report` command and `budget_report` tool are replaced by `panel run`
+and `run_panel`.
 
-- Amounts are computed at full `Decimal` precision, then rounded to 2 places
-  (midpoint away from zero) and normalized (`100000`, not `100000.00`).
-- A budget posting is a posting of a transaction carrying the budget's `tag`,
-  to an `Expense` account, whose `balance_contribution()` is in the budget's
-  currency. Its amount is that contribution, signed, so a refund reduces
-  spending.
-- `daily_budget = monthly_amount / n`; the budget line is
-  `monthly_amount × day / n`, multiplied first so the last day is exactly
-  `monthly_amount`.
-- `opening_balance` sums the `balance_accounts` postings whose own currency is
-  the budget's, dated before the 1st. A balance is what the account holds, so
-  an inline price does not convert it. `planned_balance(d)` is
-  `opening_balance` minus the budget line.
-- `actual_balance(d)` is the same sum up to `d`, and is `None` for days after
-  `today` or when there are no balance accounts, so clients draw the actual
-  lines only over elapsed days and they stop at today.
+### Panel ([`panel.rs`](../crates/sapphire-ledger-core/src/panel.rs))
 
-The desktop's Charts screen draws this report: cumulative spending against
-the budget line, and the actual balance against the planned one.
+A saved chart: its period and the series queries of each plot. Stored as
+`panels/{id}.toml`, TOML like budgets, with a random id checked against the
+panels on disk. `name` is unique among panels. A new chart is a new file, not
+a new API; the same panels are an agent's query presets (`list_panels`,
+`run_panel`).
+
+```toml
+id = "p1q2r3s"
+name = "Living pace"
+period = "month"              # month | year | last_12_months
+interval = "day"              # optional; month -> day, the others -> month
+# currency = "JPY"            # optional; base_currency
+created_at = "2026-10-17T10:00:00+09:00"
+updated_at = "2026-10-17T10:00:00+09:00"
+
+[[plots]]
+title = "Cumulative"          # optional
+stacked = false               # optional; stacks the plot's bars
+
+[[plots.series]]              # a series query, plus how it is drawn
+measure = "flow"
+tags = ["living"]
+account_types = ["Expense"]
+cumulative = true
+label = "Spent"
+mark = "line"                 # line | bar; default line
+```
+
+A panel has at least one plot and each plot at least one series. The plots
+share the x-axis, and each has one y-axis: a different scale is another plot,
+never a second axis. Budget series are drawn dashed.
+
+**Period.** A panel's range is relative to an anchor date (default today)
+moved by an integer offset of periods, computed in core by
+`panel_range(period, anchor, offset)` so the desktop, MCP and CLI agree:
+
+| `period` | Range | One offset step |
+|---|---|---|
+| `month` | the calendar month containing the anchor | 1 month |
+| `year` | the calendar year | 1 year |
+| `last_12_months` | 12 calendar months ending with the anchor's month | 1 month |
+
+**Templates.** Plain functions in
+[`templates.rs`](../crates/sapphire-ledger-api/src/templates.rs) that build a
+definition, shared by the server and the desktop: `budget_pace` (cumulative
+spending against the budget, and the daily bars), `budget_balance` (the
+paid-from balance against plan), `expenses_by_account` (stacked bars by the
+first two name segments, top 7), `net_worth` and `income_and_expenses`.
+
+`add_panel` and `update_panel` reject a structurally bad definition (no plots,
+a plot with no series, a field that does not apply to the measure, a budget
+series with no `budget`, an empty or duplicate name); `validate_workspace`
+reports a panel whose budget does not resolve or whose account filter matches
+no account. Panels name accounts as strings, so a rename leaves a panel
+naming the old one. `update_panel` replaces the definition whole, and like the
+other updates rewrites the file from its known fields: unknown keys and
+comments are not kept.
+
+The desktop's Charts screen lists the panels on its left, draws the selected
+one as stacked plots on a linked x-axis, and opens an editor to create, edit,
+preview and delete them.
+
+### Series query ([`series.rs`](../crates/sapphire-ledger-core/src/series.rs))
+
+One query that most household charts are made of: how much flowed, or what
+was held, per period, filtered and grouped — `query_series(ws, params, today)`,
+a pure function (`today` is a parameter so tests can fix it). Over a range
+and an interval it answers `buckets` and, per series, one value per bucket.
+
+- **Measures.** `flow` sums the matching postings' `balance_contribution()`
+  in the query currency per bucket (expenses positive, income negative).
+  `balance` sums their raw amounts, what the accounts hold, from the start of
+  the books to the end of each bucket. `budget` is a line of a budget:
+  `pace` is `monthly_amount / days in the month` per day, summed per bucket,
+  so months of different lengths are exact; `remaining` is the budget's
+  balance accounts at the end of the day before `from` minus the cumulative
+  pace, and is an error without balance accounts.
+- **Filters.** `accounts`, `account_types` and `tags` combine with AND across
+  fields and OR within a list; an absent or empty list does not filter. A name
+  in `accounts` matches that account and every account under it
+  (`Expenses:Food` matches `Expenses:Food:Lunch`), whether or not an account
+  of exactly that name exists. `tags` apply to the posting's transaction. A
+  field that does not apply to the measure is an error, not ignored.
+- **Buckets.** `day`, `week` (starting Monday), `month` or `year`, aligned to
+  the calendar and clipped to the range; a bucket is named by its first date
+  inside the range.
+- **Actual vs planned.** `flow` and `balance` count only postings dated on or
+  before `today`, and a bucket starting after `today` is `null`, so clients
+  stop drawing actual lines at today. Budget lines cover the whole range.
+- **Groups.** `group_by` (`account`, with `depth` segments of the name;
+  `account_type`; `tag`) splits a series into one result series per group,
+  ordered by group key, so a colour that follows order follows the group. A
+  transaction with several tags counts in each; one with none goes to
+  `(untagged)`. `top` keeps the largest groups by absolute total and sums the
+  rest into `Other`, placed last.
+- **Options.** `cumulative` makes a running total from `from`; `negate` flips
+  the sign.
+- **Limits.** At most 1000 buckets per query and 50 result series, counting
+  groups.
+- **One currency.** A query reads one currency (default `base_currency`) and
+  ignores postings in others; a budget series in another currency is an
+  error.
+
+Amounts are computed at full `Decimal` precision, then rounded to 2 places
+(midpoint away from zero) and normalized (`100000`, not `100000.00`).
 
 ### Opening balances
 
@@ -547,8 +641,8 @@ one definition serve both.
 
 ### Tools
 
-Fourteen tools of the ledger's own, declared in
-[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): seven read, seven
+Nineteen tools of the ledger's own, declared in
+[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): nine read, ten
 write. Beside them the framework's read-only tools (`status`,
 `workspace_show`, `workspace_search`, `workspace_read_file`,
 `workspace_list_dir`, `workgroup_show`, `device_list`). The framework's raw
@@ -568,10 +662,15 @@ checks can leave the books unbalanced. Descriptions below are the tools' own
 | `add_assertion` | Record a balance assertion: what an account should hold at the END of a date. A mismatch is a hard error when the books are checked. |
 | `add_price` | Record an observed exchange rate in the price log: one unit of `base` costs `rate` units of `quote` on `date`. |
 | `list_budgets` | List every budget: name, tag, currency, monthly amount and the accounts it is paid from. |
-| `budget_report` | One budget's month day by day: tagged spending against the even daily budget, and the paid-from balance against plan. |
+| `query_series` | Run a series query: flow, balance or a budget line per day, week, month or year, filtered and grouped. Single currency. |
+| `list_panels` | List the saved panels, each a chart's period and queries. These are query presets. |
+| `run_panel` | Run a saved panel (or an unsaved definition) for a period, `offset: -1` being the previous one. Look in `list_panels` first; use `query_series` when none fits. |
 | `update_account` | Change an account's default tags; later transactions copy them. |
-| `add_budget` | Create a monthly budget selected by a tag. |
+| `add_budget` | Create a monthly budget selected by a tag; `create_panels` also saves its pace and balance panels. |
 | `update_budget` | Change a budget's fields; only those given change. |
+| `add_panel` | Save a query you will run again as a preset. |
+| `update_panel` | Replace a panel's definition whole. |
+| `delete_panel` | Delete a panel. |
 
 ### Crate is library-only
 
