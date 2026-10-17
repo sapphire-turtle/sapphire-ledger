@@ -26,13 +26,14 @@ redb-store = [
 ]
 
 [dependencies]
-sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "1.0.0" }
+sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "2.0.0" }
 sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.1.0", default-features = false }
 sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.1.0", default-features = false }
 sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp"] }
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
+rust_decimal.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "time"] }
 toml.workspace = true

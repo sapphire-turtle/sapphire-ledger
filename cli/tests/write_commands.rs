@@ -293,3 +293,56 @@ fn a_cross_currency_posting_balances_through_its_inline_price() {
     let out = ok(root, &["check"]);
     assert!(out.contains("OK"), "got: {out}");
 }
+
+#[test]
+fn budget_report_prints_a_hand_written_budgets_month() {
+    let dir = seeded();
+    let root = dir.path();
+    // No CLI `budget add` yet: a budget written by hand, naming its account by name only.
+    std::fs::create_dir_all(root.join("budgets")).unwrap();
+    std::fs::write(
+        root.join("budgets/bud0001.toml"),
+        "id = \"bud0001\"\nname = \"living\"\ntag = \"grocery\"\ncurrency = \"JPY\"\n\
+         monthly_amount = \"31000\"\ncreated_at = \"2026-05-01T00:00:00+09:00\"\n\
+         updated_at = \"2026-05-01T00:00:00+09:00\"\n\n[[balance_accounts]]\naccount_name = \"Assets:Cash\"\n",
+    )
+    .unwrap();
+    ok(
+        root,
+        &[
+            "tx",
+            "add",
+            "--date",
+            "2026-05-22",
+            "--narration",
+            "veg",
+            "--tag",
+            "grocery",
+            "--posting",
+            "Expenses:Food 500 JPY",
+            "--posting",
+            "Assets:Cash -500 JPY",
+        ],
+    );
+
+    let out = ok(root, &["budget", "report", "living", "--month", "2026-05"]);
+    assert!(out.contains("1000 / day"), "got: {out}");
+    let line = out
+        .lines()
+        .find(|l| l.starts_with("2026-05-22"))
+        .expect("a row per day");
+    let cols: Vec<&str> = line.split_whitespace().collect();
+    assert_eq!(
+        cols,
+        ["2026-05-22", "500", "500", "22000", "-22000", "-1700"],
+        "got: {line}"
+    );
+    assert_eq!(
+        out.lines().filter(|l| l.starts_with("2026-05-")).count(),
+        31
+    );
+
+    let err = run(root, &["budget", "report", "nope"]);
+    assert!(!err.status.success());
+    assert!(String::from_utf8_lossy(&err.stderr).contains("no budget nope"));
+}

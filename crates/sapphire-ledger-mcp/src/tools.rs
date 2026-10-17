@@ -18,8 +18,9 @@ use sapphire_framework::mcp::{self, McpService, ToolContext};
 use serde::Serialize;
 
 use sapphire_ledger_api::{
-    self as api, AddAccountParams, AddAssertionParams, AddPriceParams, AddTransactionParams,
-    EmptyParams, GetTransactionParams, QueryPostingsParams, QueryPricesParams,
+    self as api, AddAccountParams, AddAssertionParams, AddBudgetParams, AddPriceParams,
+    AddTransactionParams, BudgetReportParams, EmptyParams, GetTransactionParams,
+    QueryPostingsParams, QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
 };
 
 /// How the ledger answers MCP: [`LedgerTools`], one per session.
@@ -128,7 +129,8 @@ impl LedgerTools {
 
     #[tool(
         description = "Create an account. Fails if one with that name already exists. \
-        Every account a posting names must be created first. Returns the new account's id."
+        Every account a posting names must be created first. Returns the new account's id. \
+        `default_tags` are copied into the transactions later recorded against it."
     )]
     pub async fn add_account(
         &self,
@@ -139,7 +141,9 @@ impl LedgerTools {
 
     #[tool(
         description = "Record a transaction. Postings must sum to zero per currency, and \
-        every account named must already exist. Nothing is written if validation fails."
+        every account named must already exist. The posting accounts' default tags are \
+        added to `tags` unless `apply_default_tags` is false. Nothing is written if \
+        validation fails."
     )]
     pub async fn add_transaction(
         &self,
@@ -169,6 +173,71 @@ impl LedgerTools {
     ) -> Result<String, String> {
         self.call(api::ADD_PRICE, p).await
     }
+
+    #[tool(
+        description = "List every budget: its id, name, the tag that selects its \
+        transactions, currency, monthly amount and the accounts it is paid from.",
+        annotations(read_only_hint = true)
+    )]
+    pub async fn list_budgets(
+        &self,
+        Parameters(p): Parameters<EmptyParams>,
+    ) -> Result<String, String> {
+        self.call(api::LIST_BUDGETS, p).await
+    }
+
+    #[tool(
+        description = "One budget's month, day by day: spending of the transactions \
+        carrying the budget's tag (to Expense accounts, in its currency), cumulated, \
+        against the monthly amount spread evenly over the month; and the paid-from \
+        accounts' balance against the month-start balance minus that daily budget. \
+        `budget` is its id or name, `month` is YYYY-MM. Days after today are marked \
+        `elapsed: false`.",
+        annotations(read_only_hint = true)
+    )]
+    pub async fn budget_report(
+        &self,
+        Parameters(p): Parameters<BudgetReportParams>,
+    ) -> Result<String, String> {
+        self.call(api::BUDGET_REPORT, p).await
+    }
+
+    #[tool(
+        description = "Create a monthly budget. Transactions carrying `tag` count \
+        against it; `balance_accounts` (ids or names) are what it is paid from. \
+        Fails if a budget with that name exists."
+    )]
+    pub async fn add_budget(
+        &self,
+        Parameters(p): Parameters<AddBudgetParams>,
+    ) -> Result<String, String> {
+        self.call(api::ADD_BUDGET, p).await
+    }
+
+    #[tool(
+        description = "Change a budget, by id or name. Only the fields given change; \
+        a new amount also redraws past months. The file is rewritten from its known \
+        fields: unknown keys and comments in it are not kept."
+    )]
+    pub async fn update_budget(
+        &self,
+        Parameters(p): Parameters<UpdateBudgetParams>,
+    ) -> Result<String, String> {
+        self.call(api::UPDATE_BUDGET, p).await
+    }
+
+    #[tool(
+        description = "Change an account's default tags, by id or name. Default tags \
+        are copied into each transaction recorded afterwards that posts to the \
+        account; past transactions keep the tags they have. The file is rewritten from its \
+        known fields: unknown keys and comments in it are not kept."
+    )]
+    pub async fn update_account(
+        &self,
+        Parameters(p): Parameters<UpdateAccountParams>,
+    ) -> Result<String, String> {
+        self.call(api::UPDATE_ACCOUNT, p).await
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -182,7 +251,8 @@ impl ServerHandler for LedgerTools {
              happened to an account, add_transaction to record spending, and \
              validate_workspace to check the books. Every transaction must balance: its \
              postings sum to zero per currency. An account must exist before anything \
-             can be posted to it.\n\n{framework}"
+             can be posted to it. list_budgets and budget_report show how a month is going \
+             against a budget.\n\n{framework}"
         ))
     }
 }
@@ -213,12 +283,17 @@ mod tests {
         }
     }
 
-    /// The ledger's nine, the framework's read-only seven, and none of the
+    /// The ledger's fourteen, the framework's read-only seven, and none of the
     /// framework's raw file writes.
     #[test]
     fn the_ledger_serves_its_tools_and_the_frameworks_read_only_ones() {
         let names: Vec<String> = tools().iter().map(|t| t.name.to_string()).collect();
         for expected in [
+            "list_budgets",
+            "budget_report",
+            "add_budget",
+            "update_budget",
+            "update_account",
             "list_accounts",
             "add_transaction",
             "validate_workspace",
@@ -237,6 +312,6 @@ mod tests {
                 || n == "workspace_delete_file"),
             "raw writes would bypass the ledger's checks: {names:?}"
         );
-        assert_eq!(names.len(), 9 + 7, "{names:?}");
+        assert_eq!(names.len(), 14 + 7, "{names:?}");
     }
 }

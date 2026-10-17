@@ -7,7 +7,10 @@
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
-use sapphire_ledger_api::{AccountType, AddAccountParams, AddTransactionParams, PostingParam};
+use sapphire_ledger_api::{
+    Account, AccountType, AddAccountParams, AddBudgetParams, AddTransactionParams, Budget,
+    PostingParam, UpdateAccountParams, UpdateBudgetParams,
+};
 
 /// One posting row as typed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -130,16 +133,12 @@ impl TxForm {
             return Err(format!("does not balance: off by {}", off.join(", ")));
         }
         Ok(AddTransactionParams {
+            // The tags field already shows the accounts' defaults; what it shows is what is stored.
+            apply_default_tags: false,
             date: date.to_owned(),
             narration: narration.to_owned(),
             payee: optional(&self.payee),
-            tags: self
-                .tags
-                .split(',')
-                .map(str::trim)
-                .filter(|t| !t.is_empty())
-                .map(str::to_owned)
-                .collect(),
+            tags: split_list(&self.tags),
             status: self.status.param(),
             postings: self
                 .postings
@@ -161,6 +160,21 @@ impl TxForm {
             comment: optional(&self.comment),
         })
     }
+
+    /// Append the `tags` the field does not have yet, keeping what was
+    /// typed: what choosing a posting's account does with its default tags.
+    pub fn add_tags(&mut self, tags: &[String]) {
+        let mut current = split_list(&self.tags);
+        let before = current.len();
+        for tag in tags {
+            if !current.contains(tag) {
+                current.push(tag.clone());
+            }
+        }
+        if current.len() != before {
+            self.tags = current.join(", ");
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -170,6 +184,8 @@ pub struct AccountForm {
     pub account_type: AccountType,
     /// Comma-separated; empty allows any.
     pub currencies: String,
+    /// Comma-separated; copied into transactions posting here.
+    pub default_tags: String,
     /// `YYYY-MM-DD`.
     pub opened_at: String,
     /// Markdown; the body of the account's file.
@@ -182,6 +198,7 @@ impl AccountForm {
             name: String::new(),
             account_type: AccountType::Expense,
             currencies: String::new(),
+            default_tags: String::new(),
             opened_at,
             description: String::new(),
         }
@@ -195,18 +212,48 @@ impl AccountForm {
             .parse::<chrono::NaiveDate>()
             .map_err(|_| format!("not a YYYY-MM-DD date: {opened_at}"))?;
         Ok(AddAccountParams {
+            default_tags: split_list(&self.default_tags),
             name: name.to_owned(),
             account_type: type_name(self.account_type).to_owned(),
-            currencies: self
-                .currencies
-                .split(',')
-                .map(str::trim)
-                .filter(|c| !c.is_empty())
-                .map(str::to_owned)
-                .collect(),
+            currencies: split_list(&self.currencies),
             opened_at: opened_at.to_owned(),
             description: optional(&self.description),
         })
+    }
+}
+
+/// A comma-separated field as its items: trimmed, empty ones dropped.
+pub fn split_list(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Editing one account's default tags.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TagsForm {
+    pub account_id: String,
+    pub account_name: String,
+    /// Comma-separated.
+    pub tags: String,
+}
+
+impl TagsForm {
+    pub fn new(account: &Account) -> TagsForm {
+        TagsForm {
+            account_id: account.id.clone(),
+            account_name: account.name.clone(),
+            tags: account.default_tags.join(", "),
+        }
+    }
+
+    pub fn to_params(&self) -> UpdateAccountParams {
+        UpdateAccountParams {
+            account: self.account_id.clone(),
+            default_tags: Some(split_list(&self.tags)),
+        }
     }
 }
 
@@ -247,6 +294,103 @@ fn optional(value: &str) -> Option<String> {
     Some(value.trim())
         .filter(|v| !v.is_empty())
         .map(str::to_owned)
+}
+
+/// A budget, new or being edited.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BudgetForm {
+    /// The budget being edited; `None` for a new one.
+    pub id: Option<String>,
+    pub name: String,
+    pub tag: String,
+    pub currency: String,
+    pub monthly_amount: String,
+    /// The ids of the accounts it is paid from.
+    pub balance_accounts: Vec<String>,
+}
+
+impl BudgetForm {
+    pub fn new(currency: &str) -> BudgetForm {
+        BudgetForm {
+            id: None,
+            name: String::new(),
+            tag: String::new(),
+            currency: currency.to_owned(),
+            monthly_amount: String::new(),
+            balance_accounts: vec![],
+        }
+    }
+
+    /// Start from `budget`, its account references turned into ids the way
+    /// the server resolves them: by id, else by name.
+    pub fn edit(budget: &Budget, accounts: &[Account]) -> BudgetForm {
+        let balance_accounts = budget
+            .balance_accounts
+            .iter()
+            .filter_map(|r| match &r.account_id {
+                Some(id) => Some(id.clone()),
+                None => accounts
+                    .iter()
+                    .find(|a| Some(a.name.as_str()) == r.account_name.as_deref())
+                    .map(|a| a.id.clone()),
+            })
+            .collect();
+        BudgetForm {
+            id: Some(budget.id.clone()),
+            name: budget.name.clone(),
+            tag: budget.tag.clone(),
+            currency: budget.currency.clone(),
+            monthly_amount: budget.monthly_amount.clone(),
+            balance_accounts,
+        }
+    }
+
+    pub fn toggle(&mut self, id: &str) {
+        match self.balance_accounts.iter().position(|a| a == id) {
+            Some(i) => {
+                self.balance_accounts.remove(i);
+            }
+            None => self.balance_accounts.push(id.to_owned()),
+        }
+    }
+
+    fn checked(&self) -> Result<(String, String, String, String), String> {
+        let name = require(&self.name, "name")?.to_owned();
+        let tag = require(&self.tag, "tag")?.to_owned();
+        let currency = require(&self.currency, "currency")?.to_owned();
+        let amount = parse_amount(&self.monthly_amount)
+            .ok_or_else(|| format!("not a number: {:?}", self.monthly_amount))?;
+        if amount <= Decimal::ZERO {
+            return Err("the monthly amount must be positive".to_owned());
+        }
+        Ok((name, tag, currency, amount.to_string()))
+    }
+
+    pub fn to_add_params(&self) -> Result<AddBudgetParams, String> {
+        let (name, tag, currency, monthly_amount) = self.checked()?;
+        Ok(AddBudgetParams {
+            name,
+            tag,
+            currency,
+            monthly_amount,
+            balance_accounts: self.balance_accounts.clone(),
+        })
+    }
+
+    pub fn to_update_params(&self) -> Result<UpdateBudgetParams, String> {
+        let (name, tag, currency, monthly_amount) = self.checked()?;
+        Ok(UpdateBudgetParams {
+            budget: self
+                .id
+                .clone()
+                .ok_or("this budget has not been created yet")?,
+            name: Some(name),
+            tag: Some(tag),
+            currency: Some(currency),
+            monthly_amount: Some(monthly_amount),
+            balance_accounts: Some(self.balance_accounts.clone()),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -342,5 +486,111 @@ mod tests {
         assert_eq!(p.account_type, "Asset");
         assert_eq!(p.currencies, ["JPY", "USD"]);
         assert_eq!(p.description, None);
+    }
+
+    #[test]
+    fn choosing_an_account_adds_its_default_tags_once() {
+        let mut form = tx(&[("Expenses:Food", "1", "JPY"), ("Assets:Cash", "-1", "JPY")]);
+        form.tags = "weekly".into();
+        form.add_tags(&["living".into(), "weekly".into()]);
+        assert_eq!(form.tags, "weekly, living");
+        form.add_tags(&["living".into()]);
+        assert_eq!(
+            form.tags, "weekly, living",
+            "nothing new, nothing rewritten"
+        );
+    }
+
+    #[test]
+    fn the_form_sends_its_tags_as_shown() {
+        let mut form = tx(&[("Expenses:Food", "1", "JPY"), ("Assets:Cash", "-1", "JPY")]);
+        form.add_tags(&["living".into()]);
+        form.tags = form.tags.replace("living", "");
+        let p = form.to_params().unwrap();
+        assert_eq!(p.tags, ["food", "weekly"]);
+        assert!(
+            !p.apply_default_tags,
+            "the server must not add back what was removed"
+        );
+    }
+
+    #[test]
+    fn an_account_form_carries_default_tags() {
+        let mut form = AccountForm::new("2026-01-01".into());
+        form.name = "Expenses:Food".into();
+        form.default_tags = "living, , food".into();
+        assert_eq!(form.to_params().unwrap().default_tags, ["living", "food"]);
+    }
+
+    #[test]
+    fn a_tags_form_replaces_the_accounts_default_tags() {
+        let account = sapphire_ledger_api::Account {
+            id: "acc0001".into(),
+            name: "Expenses:Food".into(),
+            account_type: AccountType::Expense,
+            currencies: vec![],
+            opened_at: "2026-01-01".parse().unwrap(),
+            closed_at: None,
+            default_tags: vec!["living".into()],
+            description: None,
+        };
+        let mut form = TagsForm::new(&account);
+        assert_eq!(form.tags, "living");
+        form.tags = "".into();
+        let p = form.to_params();
+        assert_eq!(p.account, "acc0001");
+        assert_eq!(p.default_tags, Some(vec![]));
+    }
+
+    #[test]
+    fn a_budget_form_becomes_add_or_update_parameters() {
+        let mut form = BudgetForm::new("JPY");
+        assert!(form.to_add_params().unwrap_err().contains("name"));
+        form.name = " 生活費 ".into();
+        form.tag = "living".into();
+        form.monthly_amount = "100,000".into();
+        form.toggle("acc0001");
+        form.toggle("acc0002");
+        form.toggle("acc0002");
+        let p = form.to_add_params().unwrap();
+        assert_eq!(
+            (p.name.as_str(), p.monthly_amount.as_str()),
+            ("生活費", "100000")
+        );
+        assert_eq!(p.balance_accounts, ["acc0001"]);
+        form.monthly_amount = "0".into();
+        assert!(form.to_add_params().unwrap_err().contains("positive"));
+    }
+
+    #[test]
+    fn editing_a_budget_starts_from_it_and_updates_every_field() {
+        let accounts = [sapphire_ledger_api::Account {
+            id: "acc0001".into(),
+            name: "Assets:Bank".into(),
+            account_type: AccountType::Asset,
+            currencies: vec![],
+            opened_at: "2026-01-01".parse().unwrap(),
+            closed_at: None,
+            default_tags: vec![],
+            description: None,
+        }];
+        let budget = sapphire_ledger_api::Budget {
+            id: "bud0001".into(),
+            name: "生活費".into(),
+            tag: "living".into(),
+            currency: "JPY".into(),
+            monthly_amount: "100000".into(),
+            // A hand-written budget naming its account only by name.
+            balance_accounts: vec![sapphire_ledger_api::AccountRef {
+                account_id: None,
+                account_name: Some("Assets:Bank".into()),
+            }],
+        };
+        let form = BudgetForm::edit(&budget, &accounts);
+        assert_eq!(form.balance_accounts, ["acc0001"]);
+        let p = form.to_update_params().unwrap();
+        assert_eq!(p.budget, "bud0001");
+        assert_eq!(p.monthly_amount.as_deref(), Some("100000"));
+        assert_eq!(p.balance_accounts, Some(vec!["acc0001".to_string()]));
     }
 }

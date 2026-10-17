@@ -15,6 +15,7 @@ fn reload_picks_up_a_record_written_after_open() {
         vec![],
         "2026-01-01".parse().unwrap(),
         None,
+        vec![],
     )
     .expect("create");
 

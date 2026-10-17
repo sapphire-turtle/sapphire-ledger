@@ -94,8 +94,10 @@ my-ledger/
 │   └── {year}/{MM}/{grain-id}.md
 ├── assertions/
 │   └── {year}/{MM}/{grain-id}.toml
-└── prices/
-    └── {year}/{MM}/{grain-id}.toml
+├── prices/
+│   └── {year}/{MM}/{grain-id}.toml
+└── budgets/
+    └── {grain-id}.toml
 ```
 
 A workspace is any directory that contains a `.sapphire-ledger/`
@@ -213,6 +215,14 @@ The body is the optional `description`, in Markdown. A `description:` key in
 the front matter is also accepted while the body is empty, so whoever writes
 the file by hand need not know which field lives where; both at once is an
 error.
+
+`default_tags` (optional) are copied into a transaction that posts to the
+account when it is recorded — on write, not on read, so the file's tags stay
+the whole truth and changing an account's defaults leaves past transactions
+alone. `add_transaction` applies them unless `apply_default_tags` is false; the
+desktop shows them in the form (so they are visible and removable) and sends
+false. `update_account` (and `update_budget`) rewrite the file from its known
+fields: unknown keys and comments in it are not kept.
 
 `Account::allows_currency(&str)` returns `true` if `currencies` is empty
 or contains the requested currency. The validator uses this to flag
@@ -346,6 +356,55 @@ reads the price log back to convert a balance into `base_currency` or build a
 net-worth report — that's the conversion half deferred out of Multi-currency
 above.
 
+### Budget ([`budget.rs`](../crates/sapphire-ledger-core/src/budget.rs))
+
+A monthly spending target for one tag, optionally paired with the accounts
+that fund it. Stored as `budgets/{grain-id}.toml` — TOML, because it has no
+free text. A budget is not dated, so there is no `{year}/{MM}/` directory: the
+path is `budgets/{id}.toml` with a random id, checked against the budgets on
+disk.
+
+```toml
+id = "b1c2d3e"
+name = "生活費"
+tag = "living"
+currency = "JPY"
+monthly_amount = "100000"      # string-encoded Decimal, positive
+created_at = "2026-10-16T10:00:00+09:00"
+updated_at = "2026-10-16T10:00:00+09:00"
+
+[[balance_accounts]]
+account_id = "4h6j2k9"         # authoritative; account_name is denormalized
+account_name = "Assets:Bank:Living"
+```
+
+`balance_accounts` may be empty; the balance view then says so instead of
+drawing. References follow the account-reference rules. `name` is unique among
+budgets because it is what people type.
+
+`core::report::budget_report(ws, budget, month, today)` is a pure function —
+`today` is a parameter so tests can fix it. For a month of `n` days:
+
+- Amounts are computed at full `Decimal` precision, then rounded to 2 places
+  (midpoint away from zero) and normalized (`100000`, not `100000.00`).
+- A budget posting is a posting of a transaction carrying the budget's `tag`,
+  to an `Expense` account, whose `balance_contribution()` is in the budget's
+  currency. Its amount is that contribution, signed, so a refund reduces
+  spending.
+- `daily_budget = monthly_amount / n`; the budget line is
+  `monthly_amount × day / n`, multiplied first so the last day is exactly
+  `monthly_amount`.
+- `opening_balance` sums the `balance_accounts` postings whose own currency is
+  the budget's, dated before the 1st. A balance is what the account holds, so
+  an inline price does not convert it. `planned_balance(d)` is
+  `opening_balance` minus the budget line.
+- `actual_balance(d)` is the same sum up to `d`, and is `None` for days after
+  `today` or when there are no balance accounts, so clients draw the actual
+  lines only over elapsed days and they stop at today.
+
+The desktop's Charts screen draws this report: cumulative spending against
+the budget line, and the actual balance against the planned one.
+
 ### Opening balances
 
 When a new account begins with a non-zero balance, that's expressed as a
@@ -386,6 +445,9 @@ detected:
 - Two accounts share an `id` (a rename that raced under sync).
 - Two accounts share a `name`. A name-only posting would otherwise resolve
   to whichever of them won the lookup table.
+- Two budgets share an `id` or a `name`; a budget's balance account does not
+  exist or is given no account reference at all; a budget's `monthly_amount` is
+  not positive.
 - Two transactions, two assertions or two price entries share an `id`. Ids
   are unique per record kind, not per `{year}/{MM}/` directory; a record
   whose date was corrected moves between directories, and that move is a
@@ -485,8 +547,8 @@ one definition serve both.
 
 ### Tools
 
-Nine tools of the ledger's own, declared in
-[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): five read, four
+Fourteen tools of the ledger's own, declared in
+[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): seven read, seven
 write. Beside them the framework's read-only tools (`status`,
 `workspace_show`, `workspace_search`, `workspace_read_file`,
 `workspace_list_dir`, `workgroup_show`, `device_list`). The framework's raw
@@ -501,10 +563,15 @@ checks can leave the books unbalanced. Descriptions below are the tools' own
 | `query_postings` | Find postings, optionally filtered by account (id or name), currency and date range; each result carries its transaction's id, date and narration. |
 | `query_prices` | Find price-log entries, optionally filtered by base, quote and date range. |
 | `validate_workspace` | Re-read the ledger from disk and report every validation issue. Empty array means consistent; a stale `account_name` alone is NOT an issue. |
-| `add_account` | Create an account. Fails if one with that name already exists. Every account a posting names must be created first. Returns the new account's id. |
-| `add_transaction` | Record a transaction. Postings must sum to zero per currency, and every account named must already exist. Nothing is written if validation fails. |
+| `add_account` | Create an account. Fails if one with that name already exists. Every account a posting names must be created first. Returns the new account's id. `default_tags` are copied into the transactions later recorded against it. |
+| `add_transaction` | Record a transaction. Postings must sum to zero per currency, and every account named must already exist. The posting accounts' default tags are added to `tags` unless `apply_default_tags` is false. Nothing is written if validation fails. |
 | `add_assertion` | Record a balance assertion: what an account should hold at the END of a date. A mismatch is a hard error when the books are checked. |
 | `add_price` | Record an observed exchange rate in the price log: one unit of `base` costs `rate` units of `quote` on `date`. |
+| `list_budgets` | List every budget: name, tag, currency, monthly amount and the accounts it is paid from. |
+| `budget_report` | One budget's month day by day: tagged spending against the even daily budget, and the paid-from balance against plan. |
+| `update_account` | Change an account's default tags; later transactions copy them. |
+| `add_budget` | Create a monthly budget selected by a tag. |
+| `update_budget` | Change a budget's fields; only those given change. |
 
 ### Crate is library-only
 

@@ -6,13 +6,14 @@ use serde::de::DeserializeOwned;
 
 use crate::account::Account;
 use crate::assertion::Assertion;
+use crate::budget::Budget;
 use crate::config::{CURRENT_SCHEMA_VERSION, Config};
 use crate::error::{Error, Result};
 use crate::prices::PriceEntry;
 use crate::transaction::Transaction;
 use crate::workspace::{
-    ACCOUNTS_DIR, ASSERTIONS_DIR, CONFIG_FILE, MARKDOWN_EXTENSION, PRICES_DIR, TOML_EXTENSION,
-    TRANSACTIONS_DIR, WORKSPACE_DIR,
+    ACCOUNTS_DIR, ASSERTIONS_DIR, BUDGETS_DIR, CONFIG_FILE, MARKDOWN_EXTENSION, PRICES_DIR,
+    TOML_EXTENSION, TRANSACTIONS_DIR, WORKSPACE_DIR,
 };
 
 /// A record kept as Markdown: YAML front matter for its fields, and one
@@ -152,6 +153,7 @@ pub struct Workspace {
     pub transactions: Vec<Transaction>,
     pub assertions: Vec<Assertion>,
     pub prices: Vec<PriceEntry>,
+    pub budgets: Vec<Budget>,
 }
 
 /// Load all records from a workspace at `root` (the directory containing
@@ -192,6 +194,11 @@ pub fn load_workspace(root: &Path) -> Result<Workspace> {
         .map(|p| load_toml::<PriceEntry>(p))
         .collect::<Result<Vec<_>>>()?;
 
+    let budgets = walk_toml_files(&root.join(BUDGETS_DIR))?
+        .iter()
+        .map(|p| load_toml::<Budget>(p))
+        .collect::<Result<Vec<_>>>()?;
+
     Ok(Workspace {
         root: root.to_path_buf(),
         config,
@@ -199,6 +206,7 @@ pub fn load_workspace(root: &Path) -> Result<Workspace> {
         transactions,
         assertions,
         prices,
+        budgets,
     })
 }
 

@@ -18,7 +18,7 @@ use sapphire_ledger_api::{
 };
 
 use crate::client::LedgerClient;
-use crate::form::{self, AccountForm, PostingRow, Status, TxForm};
+use crate::form::{self, AccountForm, PostingRow, Status, TagsForm, TxForm};
 
 /// How often the tab re-reads the books on its own, to pick up what the CLI,
 /// an agent or sync wrote.
@@ -36,6 +36,7 @@ enum Reply {
 enum Sent {
     Transaction,
     Account,
+    Tags,
 }
 
 struct Books {
@@ -62,6 +63,7 @@ pub struct LedgerView {
 
     tx_form: Option<TxForm>,
     account_form: Option<AccountForm>,
+    tags_form: Option<TagsForm>,
     /// A form is on its way to the server.
     sending: bool,
     /// Why the open form was not sent (or was refused).
@@ -71,12 +73,12 @@ pub struct LedgerView {
 impl LedgerView {
     pub fn new(
         runtime: tokio::runtime::Handle,
-        client: LedgerClient,
+        client: Arc<LedgerClient>,
         repaint: Arc<dyn Fn() + Send + Sync>,
     ) -> LedgerView {
         LedgerView {
             runtime,
-            client: Arc::new(client),
+            client,
             repaint,
             replies: mpsc::channel(),
             books: None,
@@ -87,6 +89,7 @@ impl LedgerView {
             notice: None,
             tx_form: None,
             account_form: None,
+            tags_form: None,
             sending: false,
             form_error: None,
         }
@@ -119,6 +122,7 @@ impl LedgerView {
 
         self.tx_window(ui.ctx());
         self.account_window(ui.ctx());
+        self.tags_window(ui.ctx());
     }
 
     // ── server calls ────────────────────────────────────────────────────────
@@ -184,6 +188,19 @@ impl LedgerView {
         }
     }
 
+    fn send_tags(&mut self) {
+        let Some(form) = &self.tags_form else {
+            return;
+        };
+        let params = form.to_params();
+        let client = Arc::clone(&self.client);
+        self.start_sending();
+        self.spawn(async move {
+            let result = client.call(api::UPDATE_ACCOUNT, params).await;
+            Reply::Written(Sent::Tags, result)
+        });
+    }
+
     fn start_sending(&mut self) {
         self.sending = true;
         self.form_error = None;
@@ -224,6 +241,7 @@ impl LedgerView {
                     match sent {
                         Sent::Transaction => self.tx_form = None,
                         Sent::Account => self.account_form = None,
+                        Sent::Tags => self.tags_form = None,
                     }
                     self.notice = Some(first_line(&text));
                     self.refresh();
@@ -319,8 +337,18 @@ impl LedgerView {
     }
 
     fn postings(&mut self, ui: &mut egui::Ui) {
+        if let Some(form) = self.postings_panel(ui) {
+            self.tags_form = Some(form);
+            self.form_error = None;
+        }
+    }
+
+    /// The postings of the selected account (or all), and the tags form if
+    /// "Edit tags" was clicked.
+    fn postings_panel(&self, ui: &mut egui::Ui) -> Option<TagsForm> {
+        let mut edit_tags = None;
         let Some(books) = &self.books else {
-            return;
+            return None;
         };
         let account = self
             .selected
@@ -329,6 +357,18 @@ impl LedgerView {
         ui.heading(account.map_or("All postings", |a| a.name.as_str()));
         if let Some(a) = account.and_then(|a| a.description.as_deref()) {
             ui.label(a);
+        }
+        if let Some(a) = account {
+            ui.horizontal(|ui| {
+                ui.label(if a.default_tags.is_empty() {
+                    "No default tags".to_owned()
+                } else {
+                    format!("Default tags: {}", a.default_tags.join(", "))
+                });
+                if ui.small_button("Edit tags").clicked() {
+                    edit_tags = Some(TagsForm::new(a));
+                }
+            });
         }
         ui.separator();
 
@@ -339,7 +379,7 @@ impl LedgerView {
             .collect();
         if hits.is_empty() {
             ui.label("No postings.");
-            return;
+            return edit_tags;
         }
         // The running balance only means something within one account.
         let running = account.map(|_| running_balances(&hits));
@@ -380,6 +420,7 @@ impl LedgerView {
                     }
                 });
         });
+        edit_tags
     }
 
     fn issues(&self, ui: &mut egui::Ui) {
@@ -401,13 +442,13 @@ impl LedgerView {
         let Some(form) = &mut self.tx_form else {
             return;
         };
-        let accounts: Vec<String> = self
+        let accounts: Vec<Account> = self
             .books
             .as_ref()
             .map(|b| {
-                let mut names: Vec<String> = b.accounts.iter().map(|a| a.name.clone()).collect();
-                names.sort();
-                names
+                let mut accounts = b.accounts.clone();
+                accounts.sort_by(|a, b| a.name.cmp(&b.name));
+                accounts
             })
             .unwrap_or_default();
         let mut open = true;
@@ -455,11 +496,15 @@ impl LedgerView {
                 ui.separator();
                 ui.strong("Postings");
                 let mut remove = None;
+                // Default tags of the accounts chosen this frame.
+                let mut picked: Vec<Vec<String>> = vec![];
                 egui::Grid::new("tx_postings")
                     .num_columns(5)
                     .show(ui, |ui| {
                         for (i, row) in form.postings.iter_mut().enumerate() {
-                            posting_row(ui, i, row, &accounts);
+                            if let Some(a) = posting_row(ui, i, row, &accounts) {
+                                picked.push(a.default_tags.clone());
+                            }
                             if ui
                                 .add_enabled(i >= 2, egui::Button::new("✕"))
                                 .on_hover_text("Remove this posting")
@@ -470,6 +515,9 @@ impl LedgerView {
                             ui.end_row();
                         }
                     });
+                for tags in picked {
+                    form.add_tags(&tags);
+                }
                 if let Some(i) = remove {
                     form.postings.remove(i);
                 }
@@ -571,6 +619,11 @@ impl LedgerView {
                                 .hint_text("empty allows any; JPY, USD"),
                         );
                         ui.end_row();
+                        ui.label("Default tags");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut form.default_tags).hint_text("living"),
+                        );
+                        ui.end_row();
                         ui.label("Opened");
                         ui.add(
                             egui::TextEdit::singleline(&mut form.opened_at).hint_text("YYYY-MM-DD"),
@@ -605,6 +658,41 @@ impl LedgerView {
         }
     }
 
+    fn tags_window(&mut self, ctx: &egui::Context) {
+        let Some(form) = &mut self.tags_form else {
+            return;
+        };
+        let mut open = true;
+        let mut submit = false;
+        egui::Window::new("Default tags")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(&form.account_name);
+                ui.add(egui::TextEdit::singleline(&mut form.tags).hint_text("living, food"));
+                ui.weak("Copied into each transaction recorded against this account from now on.");
+                ui.separator();
+                if let Some(e) = &self.form_error {
+                    ui.colored_label(ui.visuals().error_fg_color, e);
+                }
+                ui.horizontal(|ui| {
+                    submit = ui
+                        .add_enabled(!self.sending, egui::Button::new("Save"))
+                        .clicked();
+                    if self.sending {
+                        ui.spinner();
+                    }
+                });
+            });
+        if !open {
+            self.tags_form = None;
+            self.form_error = None;
+        } else if submit {
+            self.send_tags();
+        }
+    }
+
     /// The currency a new transaction starts in: the selected account's
     /// first, else the one most postings use, else JPY.
     fn default_currency(&self) -> String {
@@ -630,7 +718,14 @@ impl LedgerView {
     }
 }
 
-fn posting_row(ui: &mut egui::Ui, i: usize, row: &mut PostingRow, accounts: &[String]) {
+/// One posting's fields; returns the account newly chosen this frame.
+fn posting_row<'a>(
+    ui: &mut egui::Ui,
+    i: usize,
+    row: &mut PostingRow,
+    accounts: &'a [Account],
+) -> Option<&'a Account> {
+    let mut chosen = None;
     egui::ComboBox::from_id_salt(("posting_account", i))
         .width(220.0)
         .selected_text(if row.account.is_empty() {
@@ -639,8 +734,13 @@ fn posting_row(ui: &mut egui::Ui, i: usize, row: &mut PostingRow, accounts: &[St
             row.account.as_str()
         })
         .show_ui(ui, |ui| {
-            for name in accounts {
-                ui.selectable_value(&mut row.account, name.clone(), name);
+            for account in accounts {
+                if ui
+                    .selectable_value(&mut row.account, account.name.clone(), &account.name)
+                    .changed()
+                {
+                    chosen = Some(account);
+                }
             }
         });
     ui.add(
@@ -658,6 +758,7 @@ fn posting_row(ui: &mut egui::Ui, i: usize, row: &mut PostingRow, accounts: &[St
             .hint_text("memo")
             .desired_width(140.0),
     );
+    chosen
 }
 
 // ── pure helpers ────────────────────────────────────────────────────────────
@@ -747,6 +848,7 @@ mod tests {
             currencies: vec![],
             opened_at: "2026-01-01".parse().unwrap(),
             closed_at: None,
+            default_tags: vec![],
             description: None,
         }
     }

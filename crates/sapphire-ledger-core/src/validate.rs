@@ -162,6 +162,49 @@ impl Workspace {
             }
         }
 
+        let mut seen_budget_ids: HashSet<&str> = HashSet::new();
+        let mut seen_budget_names: HashSet<&str> = HashSet::new();
+        for budget in &self.budgets {
+            let issue = |message: String, account: Option<String>| ValidationIssue {
+                message,
+                transaction_id: None,
+                assertion_id: None,
+                account,
+            };
+            if !seen_budget_ids.insert(budget.id.as_str()) {
+                issues.push(issue(format!("duplicate budget id {}", budget.id), None));
+            }
+            if !seen_budget_names.insert(budget.name.as_str()) {
+                issues.push(issue(
+                    format!("duplicate budget name {}", budget.name),
+                    None,
+                ));
+            }
+            if budget.monthly_amount <= rust_decimal::Decimal::ZERO {
+                issues.push(issue(
+                    format!(
+                        "budget {}: monthly_amount {} is not positive",
+                        budget.name, budget.monthly_amount
+                    ),
+                    None,
+                ));
+            }
+            for r in &budget.balance_accounts {
+                let (id, name) = (r.account_id.as_deref(), r.account_name.as_deref());
+                if let Err(err) = resolve_account(id, name, &by_id, &by_name) {
+                    issues.push(issue(
+                        format!(
+                            "budget {}: {} ({})",
+                            budget.name,
+                            render(&err),
+                            describe_ref(id, name)
+                        ),
+                        Some(describe_ref(id, name)),
+                    ));
+                }
+            }
+        }
+
         issues
     }
 }

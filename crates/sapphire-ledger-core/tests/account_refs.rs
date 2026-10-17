@@ -8,6 +8,7 @@ fn account(id: &str, name: &str) -> Account {
         currencies: vec![],
         opened_at: "2026-01-01".parse().unwrap(),
         closed_at: None,
+        default_tags: vec![],
         description: None,
     }
 }
@@ -53,6 +54,7 @@ fn workspace(
         accounts,
         transactions,
         assertions,
+        budgets: vec![],
         prices: vec![],
     }
 }

@@ -49,6 +49,10 @@ pub struct AddAccountParams {
     pub opened_at: String,
     /// Free-form notes on the account, in Markdown.
     pub description: Option<String>,
+    /// Tags that `add_transaction` adds to a transaction posting to this
+    /// account. Empty means none.
+    #[serde(default)]
+    pub default_tags: Vec<String>,
 }
 
 /// One side of a transaction. Amounts are strings so decimals survive JSON.
@@ -83,6 +87,16 @@ pub struct AddTransactionParams {
     pub postings: Vec<PostingParam>,
     /// Free-form notes on the whole transaction, in Markdown.
     pub comment: Option<String>,
+    /// Add the posting accounts' default tags to `tags`. On unless set to
+    /// false: a client that shows the tags before sending (the desktop) sends
+    /// false and the tags as shown.
+    #[serde(default = "applies")]
+    pub apply_default_tags: bool,
+}
+
+/// `add_transaction` applies default tags unless told otherwise.
+fn applies() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -112,4 +126,72 @@ pub struct AddPriceParams {
     pub rate: String,
     /// Where the rate came from, e.g. `manual`.
     pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UpdateAccountParams {
+    /// Account id or account name.
+    pub account: String,
+    /// The account's new default tags, replacing the old. Leave out to keep them.
+    pub default_tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AddBudgetParams {
+    /// What the budget is called.
+    pub name: String,
+    /// The tag whose transactions count as spending against this budget.
+    pub tag: String,
+    /// Currency code, e.g. `JPY`.
+    pub currency: String,
+    /// The month's allowance, as a decimal string.
+    pub monthly_amount: String,
+    /// Accounts (id or name) whose balance the report shows against the plan.
+    #[serde(default)]
+    pub balance_accounts: Vec<String>,
+}
+
+/// The budget's id or name, and the fields to change; a field left out stays as it is.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UpdateBudgetParams {
+    /// The budget's id or name.
+    pub budget: String,
+    pub name: Option<String>,
+    pub tag: Option<String>,
+    pub currency: Option<String>,
+    pub monthly_amount: Option<String>,
+    /// Account ids or names, replacing the old.
+    pub balance_accounts: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct BudgetReportParams {
+    /// The budget's id or name.
+    pub budget: String,
+    /// `YYYY-MM`.
+    pub month: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An agent that has never heard of default tags gets them applied; an
+    /// older caller's JSON still parses.
+    #[test]
+    fn default_tags_apply_unless_a_caller_says_otherwise() {
+        let p: AddTransactionParams =
+            serde_json::from_str(r#"{"date":"2026-05-21","narration":"n","postings":[]}"#).unwrap();
+        assert!(p.apply_default_tags);
+        assert!(p.tags.is_empty());
+        let p: AddTransactionParams = serde_json::from_str(
+            r#"{"date":"2026-05-21","narration":"n","postings":[],"apply_default_tags":false}"#,
+        )
+        .unwrap();
+        assert!(!p.apply_default_tags);
+        let a: AddAccountParams =
+            serde_json::from_str(r#"{"name":"A","type":"Asset","opened_at":"2026-01-01"}"#)
+                .unwrap();
+        assert!(a.default_tags.is_empty());
+    }
 }

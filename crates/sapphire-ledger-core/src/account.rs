@@ -56,6 +56,11 @@ pub struct Account {
     pub opened_at: NaiveDate,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closed_at: Option<NaiveDate>,
+    /// Tags copied into a transaction that posts to this account, when it is
+    /// recorded. Copied, not inherited: changing them leaves past
+    /// transactions alone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub default_tags: Vec<String>,
     /// The file's Markdown body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

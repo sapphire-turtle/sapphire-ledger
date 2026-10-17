@@ -11,9 +11,9 @@ use std::path::Path;
 
 use anyhow::{Context as _, bail};
 use chrono::NaiveDate;
-use sapphire_ledger_core::{AccountType, Balance, TransactionStatus, ops};
+use sapphire_ledger_core::{AccountType, Balance, TransactionStatus, ops, report};
 
-use crate::cli::{AccountCommand, AssertionCommand, PriceCommand, TxCommand};
+use crate::cli::{AccountCommand, AssertionCommand, BudgetCommand, PriceCommand, TxCommand};
 use crate::posting;
 
 pub fn account(command: AccountCommand, root: &Path) -> anyhow::Result<()> {
@@ -31,8 +31,15 @@ pub fn account(command: AccountCommand, root: &Path) -> anyhow::Result<()> {
         None => today(),
     };
 
-    let (id, dest) =
-        ops::create_account(root, name, account_type, currencies, opened_at, description)?;
+    let (id, dest) = ops::create_account(
+        root,
+        name,
+        account_type,
+        currencies,
+        opened_at,
+        description,
+        vec![],
+    )?;
     println!("created account {id} at {}", shown(&dest));
     Ok(())
 }
@@ -59,7 +66,7 @@ pub fn tx(command: TxCommand, root: &Path) -> anyhow::Result<()> {
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
             let (id, dest) = ops::create_transaction(
-                root, date, narration, payee, tags, status, postings, comment,
+                root, date, narration, payee, tags, status, postings, comment, true,
             )?;
             println!("created transaction {id} at {}", shown(&dest));
             Ok(())
@@ -257,6 +264,51 @@ fn parse_balance(spec: &str) -> anyhow::Result<Balance> {
             .with_context(|| format!("not a decimal amount: {amount:?} in {spec:?}"))?,
         currency: (*currency).to_owned(),
     })
+}
+
+pub fn budget(command: BudgetCommand, root: &Path) -> anyhow::Result<()> {
+    let BudgetCommand::Report { budget, month } = command;
+    let (year, month) = match month.as_deref() {
+        Some(raw) => report::parse_month(raw)?,
+        None => {
+            let t = today();
+            (chrono::Datelike::year(&t), chrono::Datelike::month(&t))
+        }
+    };
+    let workspace = sapphire_ledger_core::load_workspace(root)?;
+    let found = workspace
+        .budgets
+        .iter()
+        .find(|b| b.id == budget)
+        .or_else(|| workspace.budgets.iter().find(|b| b.name == budget))
+        .with_context(|| format!("no budget {budget}"))?;
+    let r = report::budget_report(&workspace, found, year, month, today())?;
+    let a = |d: rust_decimal::Decimal| report::round_amount(d).to_string();
+    println!(
+        "{} {year:04}-{month:02}: {} {} / month, {} / day, opening balance {}",
+        found.name,
+        a(found.monthly_amount),
+        found.currency,
+        a(r.daily_budget),
+        a(r.opening_balance),
+    );
+    println!(
+        "{:<10}  {:>12}  {:>12}  {:>12}  {:>12}  {:>12}",
+        "date", "spent", "spent total", "budget total", "planned", "actual"
+    );
+    for d in &r.days {
+        let actual = d.actual_balance.map(a).unwrap_or_else(|| "-".into());
+        println!(
+            "{}  {:>12}  {:>12}  {:>12}  {:>12}  {:>12}",
+            d.date,
+            a(d.spent),
+            a(d.spent_cumulative),
+            a(d.budget_cumulative),
+            a(d.planned_balance),
+            actual,
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
