@@ -168,14 +168,6 @@ pub struct UpdateBudgetParams {
     pub balance_accounts: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct BudgetReportParams {
-    /// The budget's id or name.
-    pub budget: String,
-    /// `YYYY-MM`.
-    pub month: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

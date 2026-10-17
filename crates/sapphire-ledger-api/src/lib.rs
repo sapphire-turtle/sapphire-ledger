@@ -20,8 +20,8 @@ pub use sapphire_server_api as server;
 mod params;
 pub use params::{
     AddAccountParams, AddAssertionParams, AddBudgetParams, AddPriceParams, AddTransactionParams,
-    BalanceParam, BudgetReportParams, EmptyParams, GetTransactionParams, PostingParam,
-    QueryPostingsParams, QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
+    BalanceParam, EmptyParams, GetTransactionParams, PostingParam, QueryPostingsParams,
+    QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
 };
 
 mod series;
@@ -35,8 +35,8 @@ pub mod templates;
 
 mod records;
 pub use records::{
-    Account, AccountRef, AccountType, Budget, BudgetDay, BudgetReport, Posting, PostingHit, Price,
-    PriceEntry, Transaction, TransactionStatus, ValidationIssue,
+    Account, AccountRef, AccountType, Budget, Posting, PostingHit, Price, PriceEntry, Transaction,
+    TransactionStatus, ValidationIssue,
 };
 
 /// The version of the ledger's API: the methods below and their types,
@@ -99,8 +99,6 @@ pub const ADD_PANEL: &str = "sapphire-ledger.add_panel";
 pub const UPDATE_PANEL: &str = "sapphire-ledger.update_panel";
 /// Remove a panel; answers with a confirmation to show as it is.
 pub const DELETE_PANEL: &str = "sapphire-ledger.delete_panel";
-/// One budget's month day by day, as JSON: a [`BudgetReport`].
-pub const BUDGET_REPORT: &str = "sapphire-ledger.budget_report";
 
 #[cfg(test)]
 mod tests {

@@ -307,6 +307,8 @@ pub struct BudgetForm {
     pub monthly_amount: String,
     /// The ids of the accounts it is paid from.
     pub balance_accounts: Vec<String>,
+    /// For a new budget: also make its pace and balance panels.
+    pub create_panels: bool,
 }
 
 impl BudgetForm {
@@ -318,6 +320,7 @@ impl BudgetForm {
             currency: currency.to_owned(),
             monthly_amount: String::new(),
             balance_accounts: vec![],
+            create_panels: true,
         }
     }
 
@@ -342,6 +345,7 @@ impl BudgetForm {
             currency: budget.currency.clone(),
             monthly_amount: budget.monthly_amount.clone(),
             balance_accounts,
+            create_panels: false,
         }
     }
 
@@ -374,7 +378,7 @@ impl BudgetForm {
             currency,
             monthly_amount,
             balance_accounts: self.balance_accounts.clone(),
-            create_panels: false,
+            create_panels: self.create_panels,
         })
     }
 
@@ -397,6 +401,17 @@ impl BudgetForm {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_budget_makes_its_panels_unless_told_not_to() {
+        let mut form = BudgetForm::new("JPY");
+        form.name = "生活費".into();
+        form.tag = "living".into();
+        form.monthly_amount = "100000".into();
+        assert!(form.to_add_params().unwrap().create_panels);
+        form.create_panels = false;
+        assert!(!form.to_add_params().unwrap().create_panels);
+    }
 
     fn tx(rows: &[(&str, &str, &str)]) -> TxForm {
         TxForm {
