@@ -6,6 +6,7 @@
 
 use sapphire_ledger_api as api;
 use sapphire_ledger_core as core;
+use serde::{Serialize, de::DeserializeOwned};
 
 pub fn budget(b: &core::Budget) -> api::Budget {
     api::Budget {
@@ -25,32 +26,85 @@ pub fn budget(b: &core::Budget) -> api::Budget {
     }
 }
 
-pub fn budget_report(
-    b: &core::Budget,
-    year: i32,
-    month: u32,
-    r: &core::report::BudgetReport,
-) -> api::BudgetReport {
-    let amount = |d: rust_decimal::Decimal| core::report::round_amount(d).to_string();
-    api::BudgetReport {
-        budget: budget(b),
-        month: format!("{year:04}-{month:02}"),
-        daily_budget: amount(r.daily_budget),
-        opening_balance: amount(r.opening_balance),
-        days: r
-            .days
-            .iter()
-            .map(|d| api::BudgetDay {
-                date: d.date,
-                spent: amount(d.spent),
-                spent_cumulative: amount(d.spent_cumulative),
-                budget_cumulative: amount(d.budget_cumulative),
-                planned_balance: amount(d.planned_balance),
-                elapsed: d.elapsed,
-                actual_balance: d.actual_balance.map(amount),
+/// Between core's and the API's copies of one shape, through their JSON.
+/// The tests pin that the two serialize alike.
+pub fn convert<T: Serialize, U: DeserializeOwned>(from: &T) -> anyhow::Result<U> {
+    Ok(serde_json::from_value(serde_json::to_value(from)?)?)
+}
+
+pub fn panel(p: &core::Panel) -> anyhow::Result<api::Panel> {
+    convert(p)
+}
+
+pub fn panel_definition(d: &api::PanelDefinition) -> anyhow::Result<core::PanelDefinition> {
+    convert(d)
+}
+
+pub fn series_query(q: &api::SeriesQuery) -> anyhow::Result<core::series::SeriesQuery> {
+    convert(q)
+}
+
+fn amounts(values: Vec<Option<rust_decimal::Decimal>>) -> Vec<Option<String>> {
+    values
+        .into_iter()
+        .map(|v| v.map(|d| d.to_string()))
+        .collect()
+}
+
+pub fn series_result(r: core::series::SeriesResult) -> anyhow::Result<api::SeriesResult> {
+    Ok(api::SeriesResult {
+        currency: r.currency,
+        from: r.from,
+        to: r.to,
+        interval: convert(&r.interval)?,
+        buckets: r.buckets,
+        series: r
+            .series
+            .into_iter()
+            .map(|s| api::SeriesData {
+                index: s.index,
+                group: s.group,
+                label: s.label,
+                values: amounts(s.values),
             })
             .collect(),
-    }
+    })
+}
+
+pub fn panel_run(id: Option<String>, r: core::panel::PanelRun) -> anyhow::Result<api::PanelRun> {
+    Ok(api::PanelRun {
+        panel: id,
+        name: r.name,
+        period: convert(&r.period)?,
+        from: r.from,
+        to: r.to,
+        interval: convert(&r.interval)?,
+        currency: r.currency,
+        buckets: r.buckets,
+        plots: r
+            .plots
+            .into_iter()
+            .map(|p| {
+                Ok(api::PlotRun {
+                    title: p.title,
+                    stacked: p.stacked,
+                    series: p
+                        .series
+                        .into_iter()
+                        .map(|s| {
+                            Ok(api::SeriesRun {
+                                label: s.label,
+                                group: s.group,
+                                mark: convert(&s.mark)?,
+                                dashed: s.dashed,
+                                values: amounts(s.values),
+                            })
+                        })
+                        .collect::<anyhow::Result<_>>()?,
+                })
+            })
+            .collect::<anyhow::Result<_>>()?,
+    })
 }
 
 pub fn account(a: &core::Account) -> api::Account {
@@ -244,5 +298,55 @@ mod tests {
         for i in [full, bare] {
             assert_eq!(json(&validation_issue(i.clone())), json(&i));
         }
+    }
+
+    /// A definition with every field set converts to the API's and back
+    /// unchanged, and the two serialize to the same JSON: a field both
+    /// directions drop would round-trip, but not match.
+    #[test]
+    fn a_panel_definition_converts_to_the_api_and_back_unchanged() {
+        use self::core::panel::{Mark, PanelSeries, Period, Plot};
+        use self::core::series::{BudgetLine, GroupBy, Interval, Measure, SeriesQuery};
+
+        let flow = SeriesQuery {
+            accounts: vec!["Expenses:Food".into()],
+            account_types: vec![core::AccountType::Expense],
+            tags: vec!["living".into()],
+            group_by: Some(GroupBy::Account),
+            depth: Some(2),
+            top: Some(5),
+            cumulative: true,
+            negate: true,
+            label: Some("Food".into()),
+            ..SeriesQuery::new(Measure::Flow)
+        };
+        let budget = SeriesQuery {
+            budget: Some("生活費".into()),
+            line: Some(BudgetLine::Remaining),
+            ..SeriesQuery::new(Measure::Budget)
+        };
+        let definition = core::PanelDefinition {
+            name: "Everything".into(),
+            period: Period::Last12Months,
+            interval: Some(Interval::Week),
+            currency: Some("JPY".into()),
+            plots: vec![Plot {
+                title: Some("Plot".into()),
+                stacked: true,
+                series: vec![
+                    PanelSeries {
+                        query: flow,
+                        mark: Some(Mark::Bar),
+                    },
+                    PanelSeries {
+                        query: budget,
+                        mark: None,
+                    },
+                ],
+            }],
+        };
+        let wire: api::PanelDefinition = convert(&definition).unwrap();
+        assert_eq!(json(&wire), json(&definition));
+        assert_eq!(panel_definition(&wire).unwrap(), definition);
     }
 }

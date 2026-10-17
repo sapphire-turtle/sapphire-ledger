@@ -16,6 +16,7 @@ pub const ACCOUNTS_DIR: &str = "accounts";
 pub const ASSERTIONS_DIR: &str = "assertions";
 pub const PRICES_DIR: &str = "prices";
 pub const BUDGETS_DIR: &str = "budgets";
+pub const PANELS_DIR: &str = "panels";
 
 pub const TOML_EXTENSION: &str = "toml";
 pub const MARKDOWN_EXTENSION: &str = "md";
@@ -120,6 +121,11 @@ pub fn price_relative_path(date: NaiveDate, id: &str) -> PathBuf {
 /// so there is no `{year}/{MM}/`.
 pub fn budget_relative_path(id: &str) -> PathBuf {
     PathBuf::from(BUDGETS_DIR).join(format!("{id}.{TOML_EXTENSION}"))
+}
+
+/// Relative path for a panel: `panels/{id}.toml`.
+pub fn panel_relative_path(id: &str) -> PathBuf {
+    PathBuf::from(PANELS_DIR).join(format!("{id}.{TOML_EXTENSION}"))
 }
 
 /// Create a new sapphire-ledger workspace at `target`. Creates the directory

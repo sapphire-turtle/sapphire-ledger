@@ -205,6 +205,41 @@ impl Workspace {
             }
         }
 
+        let mut seen_panel_ids: HashSet<&str> = HashSet::new();
+        let mut seen_panel_names: HashSet<&str> = HashSet::new();
+        for panel in &self.panels {
+            let issue = |message: String| ValidationIssue {
+                message,
+                transaction_id: None,
+                assertion_id: None,
+                account: None,
+            };
+            if !seen_panel_ids.insert(panel.id.as_str()) {
+                issues.push(issue(format!("duplicate panel id {}", panel.id)));
+            }
+            if !seen_panel_names.insert(panel.name.as_str()) {
+                issues.push(issue(format!("duplicate panel name {}", panel.name)));
+            }
+            if let Err(err) = crate::panel::check_panel(&panel.definition()) {
+                issues.push(issue(render(&err)));
+            }
+            for s in panel.plots.iter().flat_map(|p| &p.series) {
+                if let Some(budget) = &s.query.budget
+                    && crate::series::find_budget(&self.budgets, budget).is_err()
+                {
+                    issues.push(issue(format!("panel {}: no budget {budget}", panel.name)));
+                }
+                for entry in &s.query.accounts {
+                    if crate::series::account_prefix(entry, &self.accounts).is_none() {
+                        issues.push(issue(format!(
+                            "panel {}: no account matches {entry}",
+                            panel.name
+                        )));
+                    }
+                }
+            }
+        }
+
         issues
     }
 }

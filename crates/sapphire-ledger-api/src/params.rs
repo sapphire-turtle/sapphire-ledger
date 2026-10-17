@@ -149,6 +149,10 @@ pub struct AddBudgetParams {
     /// Accounts (id or name) whose balance the report shows against the plan.
     #[serde(default)]
     pub balance_accounts: Vec<String>,
+    /// Also create the panels `<name> pace` and, when it has balance
+    /// accounts, `<name> balance`. If either name is taken, nothing is written.
+    #[serde(default)]
+    pub create_panels: bool,
 }
 
 /// The budget's id or name, and the fields to change; a field left out stays as it is.
@@ -162,14 +166,6 @@ pub struct UpdateBudgetParams {
     pub monthly_amount: Option<String>,
     /// Account ids or names, replacing the old.
     pub balance_accounts: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct BudgetReportParams {
-    /// The budget's id or name.
-    pub budget: String,
-    /// `YYYY-MM`.
-    pub month: String,
 }
 
 #[cfg(test)]

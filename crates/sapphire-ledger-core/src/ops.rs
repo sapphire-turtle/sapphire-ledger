@@ -36,6 +36,7 @@ use crate::assertion::{Assertion, Balance};
 use crate::budget::{AccountRef, Budget};
 use crate::config::Config;
 use crate::error::{Error, Result};
+use crate::panel::{Panel, PanelDefinition, check_panel};
 use crate::prices::PriceEntry;
 use crate::repository::{
     check_schema_version, load_markdown, load_toml, save_markdown, save_toml, walk_files,
@@ -43,9 +44,10 @@ use crate::repository::{
 };
 use crate::transaction::{Posting, Transaction, TransactionStatus};
 use crate::workspace::{
-    ACCOUNTS_DIR, ASSERTIONS_DIR, BUDGETS_DIR, CONFIG_FILE, MARKDOWN_EXTENSION, PRICES_DIR,
-    TOML_EXTENSION, TRANSACTIONS_DIR, WORKSPACE_DIR, account_relative_path,
-    assertion_relative_path, budget_relative_path, price_relative_path, transaction_relative_path,
+    ACCOUNTS_DIR, ASSERTIONS_DIR, BUDGETS_DIR, CONFIG_FILE, MARKDOWN_EXTENSION, PANELS_DIR,
+    PRICES_DIR, TOML_EXTENSION, TRANSACTIONS_DIR, WORKSPACE_DIR, account_relative_path,
+    assertion_relative_path, budget_relative_path, panel_relative_path, price_relative_path,
+    transaction_relative_path,
 };
 
 /// How many times to re-mint an id when the destination is already taken.
@@ -486,6 +488,32 @@ pub fn create_budget(
     monthly_amount: Decimal,
     balance_accounts: Vec<AccountRef>,
 ) -> Result<(String, PathBuf)> {
+    create_budget_with_panels(
+        root,
+        name,
+        tag,
+        currency,
+        monthly_amount,
+        balance_accounts,
+        |_| Ok(vec![]),
+    )
+    .map(|(id, path, _)| (id, path))
+}
+
+/// A written panel: its id and path.
+pub type PanelFile = (String, PathBuf);
+
+/// Write a new budget and the panels `panels` makes for it. Every name is
+/// checked before anything is written: a taken panel name writes nothing.
+pub fn create_budget_with_panels(
+    root: &Path,
+    name: String,
+    tag: String,
+    currency: String,
+    monthly_amount: Decimal,
+    balance_accounts: Vec<AccountRef>,
+    panels: impl FnOnce(&Budget) -> Result<Vec<PanelDefinition>>,
+) -> Result<(String, PathBuf, Vec<PanelFile>)> {
     refuse_other_schema(root)?;
     let existing = load_budgets(root)?;
     let name = name.trim().to_owned();
@@ -519,8 +547,143 @@ pub fn create_budget(
         balance_accounts,
     };
     check_budget(&budget)?;
+    let definitions = panels(&budget)?;
+    let mut planned = Vec::with_capacity(definitions.len());
+    if !definitions.is_empty() {
+        let existing_panels = load_panels(root)?;
+        let mut names: HashSet<String> = existing_panels
+            .iter()
+            .map(|(p, _)| p.name.clone())
+            .collect();
+        let mut ids: HashSet<String> = existing_panels.iter().map(|(p, _)| p.id.clone()).collect();
+        for def in definitions {
+            let def = prepared(def)?;
+            if !names.insert(def.name.clone()) {
+                return Err(Error::Validation(format!(
+                    "a panel named {} already exists",
+                    def.name
+                )));
+            }
+            let panel_id = free_random_id(&ids, "panel")?;
+            ids.insert(panel_id.clone());
+            planned.push(panel_record(panel_id, def, timestamp));
+        }
+    }
     save_toml(&dest, &budget)?;
+    let mut written = Vec::with_capacity(planned.len());
+    for panel in planned {
+        let path = root.join(panel_relative_path(&panel.id));
+        refuse_existing(&path)?;
+        save_toml(&path, &panel)?;
+        written.push((panel.id, path));
+    }
+    Ok((id, dest, written))
+}
+
+/// Every panel on disk, with its path.
+fn load_panels(root: &Path) -> Result<Vec<(Panel, PathBuf)>> {
+    walk_files(&root.join(PANELS_DIR), TOML_EXTENSION)?
+        .into_iter()
+        .map(|p| Ok((load_toml::<Panel>(&p)?, p)))
+        .collect()
+}
+
+/// A random id not in `taken`.
+fn free_random_id(taken: &HashSet<String>, kind: &str) -> Result<String> {
+    (0..ID_ATTEMPTS)
+        .map(|_| new_random_id())
+        .find(|candidate| !taken.contains(candidate))
+        .ok_or_else(|| {
+            Error::Validation(format!(
+                "could not mint a free {kind} id after {ID_ATTEMPTS} attempts"
+            ))
+        })
+}
+
+/// Trim the name and check the definition.
+fn prepared(mut def: PanelDefinition) -> Result<PanelDefinition> {
+    def.name = def.name.trim().to_owned();
+    def.currency = def
+        .currency
+        .map(|c| c.trim().to_owned())
+        .filter(|c| !c.is_empty());
+    check_panel(&def)?;
+    Ok(def)
+}
+
+fn panel_record(id: String, def: PanelDefinition, timestamp: DateTime<FixedOffset>) -> Panel {
+    Panel {
+        id,
+        name: def.name,
+        period: def.period,
+        interval: def.interval,
+        currency: def.currency,
+        created_at: timestamp,
+        updated_at: timestamp,
+        plots: def.plots,
+    }
+}
+
+fn find_panel_file<'a>(
+    existing: &'a [(Panel, PathBuf)],
+    needle: &str,
+) -> Result<&'a (Panel, PathBuf)> {
+    existing
+        .iter()
+        .find(|(p, _)| p.id == needle)
+        .or_else(|| existing.iter().find(|(p, _)| p.name == needle))
+        .ok_or_else(|| Error::Validation(format!("no panel {needle}")))
+}
+
+/// Write a new panel. Its name must be unused: `run_panel` takes it.
+pub fn create_panel(root: &Path, def: PanelDefinition) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
+    let def = prepared(def)?;
+    let existing = load_panels(root)?;
+    if existing.iter().any(|(p, _)| p.name == def.name) {
+        return Err(Error::Validation(format!(
+            "a panel named {} already exists",
+            def.name
+        )));
+    }
+    let taken: HashSet<String> = existing.iter().map(|(p, _)| p.id.clone()).collect();
+    let id = free_random_id(&taken, "panel")?;
+    let dest = root.join(panel_relative_path(&id));
+    refuse_existing(&dest)?;
+    save_toml(&dest, &panel_record(id.clone(), def, now()))?;
     Ok((id, dest))
+}
+
+/// Replace a panel's definition, found by id or name; its id and
+/// `created_at` stay. The file is rewritten from the known fields, so
+/// unknown keys and comments in it are not kept.
+pub fn update_panel(root: &Path, panel: &str, def: PanelDefinition) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
+    let def = prepared(def)?;
+    let existing = load_panels(root)?;
+    let (found, path) = find_panel_file(&existing, panel)?.clone();
+    if existing
+        .iter()
+        .any(|(p, _)| p.name == def.name && p.id != found.id)
+    {
+        return Err(Error::Validation(format!(
+            "a panel named {} already exists",
+            def.name
+        )));
+    }
+    let mut record = panel_record(found.id.clone(), def, now());
+    record.created_at = found.created_at;
+    save_toml(&path, &record)?;
+    Ok((found.id, path))
+}
+
+/// Remove a panel, found by id or name.
+pub fn delete_panel(root: &Path, panel: &str) -> Result<(String, PathBuf)> {
+    refuse_other_schema(root)?;
+    let existing = load_panels(root)?;
+    let (found, path) = find_panel_file(&existing, panel)?.clone();
+    std::fs::remove_file(&path)?;
+    Ok((found.id, path))
 }
 
 /// What `update_budget` changes; `None` leaves a field as it is.

@@ -65,9 +65,9 @@ pub enum Command {
     /// Record observed exchange rates.
     #[command(subcommand)]
     Price(PriceCommand),
-    /// Read budgets.
+    /// Run saved panels: a chart's queries, as a table.
     #[command(subcommand)]
-    Budget(BudgetCommand),
+    Panel(PanelCommand),
     /// The framework's verbs: serve, status, service, workspace, workgroup,
     /// device, embedding, external-device, mcp.
     #[command(flatten)]
@@ -188,14 +188,18 @@ pub enum PriceCommand {
 }
 
 #[derive(Subcommand)]
-pub enum BudgetCommand {
-    /// One budget's month, day by day: spent, cumulative spent, cumulative
-    /// budget, planned and actual balance.
-    Report {
-        /// Budget name or id.
-        budget: String,
-        /// `YYYY-MM`. Defaults to this month.
-        #[arg(long, value_name = "MONTH")]
-        month: Option<String>,
+pub enum PanelCommand {
+    /// Every panel: id, name and period.
+    List,
+    /// One panel's queries, a table per plot: a row per bucket, a column per series.
+    Run {
+        /// Panel name or id.
+        panel: String,
+        /// `YYYY-MM-DD` the period is around. Defaults to today.
+        #[arg(long, value_name = "DATE")]
+        anchor: Option<String>,
+        /// Periods to move by: -1 is the previous month (or year).
+        #[arg(long, allow_hyphen_values = true, value_name = "N")]
+        offset: Option<i32>,
     },
 }

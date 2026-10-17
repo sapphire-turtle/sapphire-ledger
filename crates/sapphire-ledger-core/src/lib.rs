@@ -14,9 +14,11 @@ pub mod config;
 pub mod error;
 pub mod migrate;
 pub mod ops;
+pub mod panel;
 pub mod prices;
 pub mod report;
 pub mod repository;
+pub mod series;
 pub mod state;
 pub mod transaction;
 pub mod validate;
@@ -28,6 +30,7 @@ pub use budget::{AccountRef, Budget};
 pub use config::{CURRENT_SCHEMA_VERSION, CacheConfig, Config};
 pub use error::{Error, Result};
 pub use migrate::{MigrationReport, migrate_workspace};
+pub use panel::{Mark, Panel, PanelDefinition, PanelSeries, Period, Plot};
 pub use prices::{Price, PriceEntry};
 pub use repository::{
     MarkdownRecord, Workspace, from_markdown, load_markdown, load_toml, load_workspace,
@@ -37,9 +40,9 @@ pub use state::LedgerState;
 pub use transaction::{Posting, Transaction, TransactionStatus};
 pub use validate::ValidationIssue;
 pub use workspace::{
-    BUDGETS_DIR, PRICES_DIR, account_name_from_relative_path, account_relative_path,
+    BUDGETS_DIR, PANELS_DIR, PRICES_DIR, account_name_from_relative_path, account_relative_path,
     assertion_relative_path, budget_relative_path, find_workspace_root, init_workspace,
-    price_relative_path, transaction_relative_path,
+    panel_relative_path, price_relative_path, transaction_relative_path,
 };
 
 /// Process-wide application context, naming the cache and data directories
