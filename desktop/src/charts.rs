@@ -114,6 +114,12 @@ pub struct ChartsView {
     confirm_delete: Option<Panel>,
 }
 
+/// Whether the body says there are no panels: not while an unsaved
+/// definition is previewed.
+fn shows_placeholder(no_panels: bool, loading: bool, previewing: bool) -> bool {
+    no_panels && !loading && !previewing
+}
+
 /// The panel to show: the selected one if it is still there, else the one
 /// just written by name, else the first.
 fn pick(panels: &[Panel], selected: Option<&str>, by_name: Option<&str>) -> Option<String> {
@@ -279,6 +285,8 @@ impl ChartsView {
             Ok(definition) => {
                 self.form_error = None;
                 self.previewing = true;
+                // A load in flight is overtaken; its reply will not reset this.
+                self.loading = false;
                 let n = self.generation.next();
                 let client = Arc::clone(&self.client);
                 let offset = self.offset;
@@ -381,7 +389,13 @@ impl ChartsView {
                 Reply::Preview(_, run) => self.run = Some(run),
                 Reply::Deleted(Ok(_)) => {
                     self.selected = None;
-                    self.confirm_delete = None;
+                    let deleted = self.confirm_delete.take();
+                    if let (Some(p), Some(form)) = (&deleted, &self.editor)
+                        && form.id.as_deref() == Some(p.id.as_str())
+                    {
+                        self.editor = None;
+                    }
+                    self.previewing = false;
                     self.reload_now();
                 }
                 Reply::Deleted(Err(e)) => self.form_error = Some(e),
@@ -499,7 +513,7 @@ impl ChartsView {
     }
 
     fn body(&mut self, ui: &mut egui::Ui) {
-        if self.panels.is_empty() && !self.loading {
+        if shows_placeholder(self.panels.is_empty(), self.loading, self.previewing) {
             ui.label("No panels yet. Make one from a budget under Budgets…, or with an agent's add_panel.");
             return;
         }
@@ -1443,5 +1457,30 @@ mod tests {
             .unwrap();
         view.drain_replies();
         assert_eq!(view.selected, None);
+    }
+
+    #[test]
+    fn a_preview_hides_the_no_panels_placeholder() {
+        assert!(shows_placeholder(true, false, false));
+        assert!(!shows_placeholder(true, false, true));
+        assert!(!shows_placeholder(false, false, false));
+    }
+
+    #[test]
+    fn a_deleted_panel_ends_the_preview_and_closes_its_editor() {
+        let (_rt, mut view) = view();
+        view.confirm_delete = Some(panel("p1", "A"));
+        view.editor = Some(PanelForm::from_definition(
+            Some("p1".into()),
+            &panel("p1", "A").definition(),
+        ));
+        view.previewing = true;
+        view.replies
+            .0
+            .send(Reply::Deleted(Ok("deleted panel p1".into())))
+            .unwrap();
+        view.drain_replies();
+        assert!(!view.previewing);
+        assert!(view.editor.is_none());
     }
 }
