@@ -18,9 +18,10 @@ use sapphire_framework::mcp::{self, McpService, ToolContext};
 use serde::Serialize;
 
 use sapphire_ledger_api::{
-    self as api, AddAccountParams, AddAssertionParams, AddBudgetParams, AddPriceParams,
-    AddTransactionParams, BudgetReportParams, EmptyParams, GetTransactionParams,
-    QueryPostingsParams, QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
+    self as api, AddAccountParams, AddAssertionParams, AddBudgetParams, AddPanelParams,
+    AddPriceParams, AddTransactionParams, DeletePanelParams, EmptyParams, GetTransactionParams,
+    QueryPostingsParams, QueryPricesParams, QuerySeriesParams, RunPanelParams, UpdateAccountParams,
+    UpdateBudgetParams, UpdatePanelParams,
 };
 
 /// How the ledger answers MCP: [`LedgerTools`], one per session.
@@ -187,25 +188,10 @@ impl LedgerTools {
     }
 
     #[tool(
-        description = "One budget's month, day by day: spending of the transactions \
-        carrying the budget's tag (to Expense accounts, in its currency), cumulated, \
-        against the monthly amount spread evenly over the month; and the paid-from \
-        accounts' balance against the month-start balance minus that daily budget. \
-        `budget` is its id or name, `month` is YYYY-MM. Days after today are marked \
-        `elapsed: false`.",
-        annotations(read_only_hint = true)
-    )]
-    pub async fn budget_report(
-        &self,
-        Parameters(p): Parameters<BudgetReportParams>,
-    ) -> Result<String, String> {
-        self.call(api::BUDGET_REPORT, p).await
-    }
-
-    #[tool(
         description = "Create a monthly budget. Transactions carrying `tag` count \
         against it; `balance_accounts` (ids or names) are what it is paid from. \
-        Fails if a budget with that name exists."
+        Fails if a budget with that name exists. With `create_panels`, also saves its \
+        `<name> pace` and `<name> balance` panels."
     )]
     pub async fn add_budget(
         &self,
@@ -238,6 +224,79 @@ impl LedgerTools {
     ) -> Result<String, String> {
         self.call(api::UPDATE_ACCOUNT, p).await
     }
+
+    #[tool(
+        description = "Run a series query: per bucket (day, week, month or year) between \
+        `from` and `to`, how much flowed (`flow`: expenses positive, income negative), what \
+        was held (`balance`), or a budget's pro-rated line (`budget`: `pace`, or `remaining` \
+        from its balance accounts). Filter by accounts (a name matches everything under \
+        it), account_types and tags; split with group_by; `top` folds small groups into \
+        Other. One currency, the ledger's base by default. Check list_panels first: a saved \
+        panel may already be the query you want.",
+        annotations(read_only_hint = true)
+    )]
+    pub async fn query_series(
+        &self,
+        Parameters(p): Parameters<QuerySeriesParams>,
+    ) -> Result<String, String> {
+        self.call(api::QUERY_SERIES, p).await
+    }
+
+    #[tool(
+        description = "List the saved panels: each a chart's period and, per plot, the \
+        series queries it draws. They are query presets: run one with run_panel.",
+        annotations(read_only_hint = true)
+    )]
+    pub async fn list_panels(
+        &self,
+        Parameters(p): Parameters<EmptyParams>,
+    ) -> Result<String, String> {
+        self.call(api::LIST_PANELS, p).await
+    }
+
+    #[tool(
+        description = "Run a saved panel (by id or name) as a query preset, or an unsaved \
+        `definition` as given. The period is around `anchor` (default today); `offset: -1` \
+        is the previous month (or year). Look in list_panels for a preset first; use \
+        query_series when none fits.",
+        annotations(read_only_hint = true)
+    )]
+    pub async fn run_panel(
+        &self,
+        Parameters(p): Parameters<RunPanelParams>,
+    ) -> Result<String, String> {
+        self.call(api::RUN_PANEL, p).await
+    }
+
+    #[tool(
+        description = "Save a panel: a query you will run again, kept as a preset (and \
+        drawn on the desktop's Charts screen). Its name must be unused."
+    )]
+    pub async fn add_panel(
+        &self,
+        Parameters(p): Parameters<AddPanelParams>,
+    ) -> Result<String, String> {
+        self.call(api::ADD_PANEL, p).await
+    }
+
+    #[tool(
+        description = "Replace a panel's definition, by id or name. The file is rewritten \
+        from its known fields: unknown keys and comments in it are not kept."
+    )]
+    pub async fn update_panel(
+        &self,
+        Parameters(p): Parameters<UpdatePanelParams>,
+    ) -> Result<String, String> {
+        self.call(api::UPDATE_PANEL, p).await
+    }
+
+    #[tool(description = "Delete a panel, by id or name.")]
+    pub async fn delete_panel(
+        &self,
+        Parameters(p): Parameters<DeletePanelParams>,
+    ) -> Result<String, String> {
+        self.call(api::DELETE_PANEL, p).await
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -251,8 +310,8 @@ impl ServerHandler for LedgerTools {
              happened to an account, add_transaction to record spending, and \
              validate_workspace to check the books. Every transaction must balance: its \
              postings sum to zero per currency. An account must exist before anything \
-             can be posted to it. list_budgets and budget_report show how a month is going \
-             against a budget.\n\n{framework}"
+             can be posted to it. list_panels and run_panel show saved charts (a budget's pace, net worth, …) \
+             as query presets; query_series answers anything else.\n\n{framework}"
         ))
     }
 }
@@ -283,14 +342,19 @@ mod tests {
         }
     }
 
-    /// The ledger's fourteen, the framework's read-only seven, and none of the
+    /// The ledger's nineteen, the framework's read-only seven, and none of the
     /// framework's raw file writes.
     #[test]
     fn the_ledger_serves_its_tools_and_the_frameworks_read_only_ones() {
         let names: Vec<String> = tools().iter().map(|t| t.name.to_string()).collect();
         for expected in [
             "list_budgets",
-            "budget_report",
+            "query_series",
+            "list_panels",
+            "run_panel",
+            "add_panel",
+            "update_panel",
+            "delete_panel",
             "add_budget",
             "update_budget",
             "update_account",
@@ -312,6 +376,7 @@ mod tests {
                 || n == "workspace_delete_file"),
             "raw writes would bypass the ledger's checks: {names:?}"
         );
-        assert_eq!(names.len(), 14 + 7, "{names:?}");
+        assert!(!names.iter().any(|n| n == "budget_report"), "{names:?}");
+        assert_eq!(names.len(), 19 + 7, "{names:?}");
     }
 }

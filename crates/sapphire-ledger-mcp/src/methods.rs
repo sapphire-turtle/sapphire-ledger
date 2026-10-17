@@ -16,11 +16,12 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context as _;
 use sapphire_framework::ipc::{RequestCtx, Router, RpcError};
 use sapphire_ledger_api::{
-    self as api, AddAccountParams, AddAssertionParams, AddBudgetParams, AddPriceParams,
-    AddTransactionParams, BudgetReportParams, EmptyParams, GetTransactionParams, PostingHit,
-    PostingParam, QueryPostingsParams, QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
+    self as api, AddAccountParams, AddAssertionParams, AddBudgetParams, AddPanelParams,
+    AddPriceParams, AddTransactionParams, DeletePanelParams, EmptyParams, GetTransactionParams,
+    PostingHit, PostingParam, QueryPostingsParams, QueryPricesParams, QuerySeriesParams,
+    RunPanelParams, UpdateAccountParams, UpdateBudgetParams, UpdatePanelParams,
 };
-use sapphire_ledger_core::{LedgerState, ops};
+use sapphire_ledger_core::{LedgerState, ops, panel, series};
 use serde::de::DeserializeOwned;
 
 use crate::wire;
@@ -107,13 +108,33 @@ pub fn register(router: Router, source: StateSource) -> Router {
         &source,
         LedgerMethods::update_budget,
     );
+    let router = route(router, api::ADD_PRICE, &source, LedgerMethods::add_price);
     let router = route(
         router,
-        api::BUDGET_REPORT,
+        api::QUERY_SERIES,
         &source,
-        LedgerMethods::budget_report,
+        LedgerMethods::query_series,
     );
-    route(router, api::ADD_PRICE, &source, LedgerMethods::add_price)
+    let router = route(
+        router,
+        api::LIST_PANELS,
+        &source,
+        LedgerMethods::list_panels,
+    );
+    let router = route(router, api::RUN_PANEL, &source, LedgerMethods::run_panel);
+    let router = route(router, api::ADD_PANEL, &source, LedgerMethods::add_panel);
+    let router = route(
+        router,
+        api::UPDATE_PANEL,
+        &source,
+        LedgerMethods::update_panel,
+    );
+    route(
+        router,
+        api::DELETE_PANEL,
+        &source,
+        LedgerMethods::delete_panel,
+    )
 }
 
 /// Register one method: parse its parameters, then run `method` against the
@@ -291,17 +312,6 @@ fn write_result(
         ));
     }
     msg
-}
-
-fn find_budget<'a>(
-    budgets: &'a [sapphire_ledger_core::Budget],
-    needle: &str,
-) -> anyhow::Result<&'a sapphire_ledger_core::Budget> {
-    budgets
-        .iter()
-        .find(|b| b.id == needle)
-        .or_else(|| budgets.iter().find(|b| b.name == needle))
-        .with_context(|| format!("no budget {needle}"))
 }
 
 fn account_refs(
@@ -628,12 +638,42 @@ impl LedgerMethods {
             // See add_transaction: classify references against fresh accounts.
             guard.reload()?;
             let refs = account_refs(p.balance_accounts, &guard.workspace().accounts);
-            let (id, dest) =
-                ops::create_budget(guard.root(), p.name, p.tag, p.currency, amount, refs)?;
+            let with_panels = p.create_panels;
+            let (id, dest, panels) = ops::create_budget_with_panels(
+                guard.root(),
+                p.name,
+                p.tag,
+                p.currency,
+                amount,
+                refs,
+                |budget| {
+                    if !with_panels {
+                        return Ok(vec![]);
+                    }
+                    let budget = wire::budget(budget);
+                    [
+                        Some(api::templates::budget_pace(&budget)),
+                        api::templates::budget_balance(&budget),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .map(|d| {
+                        wire::panel_definition(&d)
+                            .map_err(|e| sapphire_ledger_core::Error::Validation(e.to_string()))
+                    })
+                    .collect()
+                },
+            )?;
             let reload_err = guard.reload().err();
             drop(guard);
-            self.notify_write(std::slice::from_ref(&dest));
-            Ok(write_result("created", "budget", &id, &dest, reload_err))
+            let mut touched = vec![dest.clone()];
+            touched.extend(panels.iter().map(|(_, path)| path.clone()));
+            self.notify_write(&touched);
+            let mut message = write_result("created", "budget", &id, &dest, reload_err);
+            for (panel_id, path) in &panels {
+                message.push_str(&format!("\ncreated panel {panel_id}: {}", path.display()));
+            }
+            Ok(message)
         })()
         .map_err(render_error)
     }
@@ -662,18 +702,101 @@ impl LedgerMethods {
         .map_err(render_error)
     }
 
-    fn budget_report(&self, p: BudgetReportParams) -> Result<String, String> {
+    fn query_series(&self, p: QuerySeriesParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
-            let (year, month) = sapphire_ledger_core::report::parse_month(&p.month)?;
+            let request = series::SeriesRequest {
+                from: parse_date(&p.from)?,
+                to: parse_date(&p.to)?,
+                interval: wire::convert(&p.interval)?,
+                currency: p.currency,
+                series: p
+                    .series
+                    .iter()
+                    .map(wire::series_query)
+                    .collect::<anyhow::Result<_>>()?,
+            };
+            let guard = self.lock_state();
+            let today = chrono::Local::now().date_naive();
+            let result = series::query_series(guard.workspace(), &request, today)?;
+            Ok(serde_json::to_string_pretty(&wire::series_result(result)?)?)
+        })()
+        .map_err(render_error)
+    }
+
+    fn list_panels(&self, _: EmptyParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let guard = self.lock_state();
+            let panels = guard
+                .workspace()
+                .panels
+                .iter()
+                .map(wire::panel)
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            Ok(serde_json::to_string_pretty(&panels)?)
+        })()
+        .map_err(render_error)
+    }
+
+    fn run_panel(&self, p: RunPanelParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
             let guard = self.lock_state();
             let ws = guard.workspace();
-            let budget = find_budget(&ws.budgets, &p.budget)?;
+            let (id, definition) = match (p.panel, p.definition) {
+                (Some(needle), None) => {
+                    let found = panel::find_panel(&ws.panels, &needle)?;
+                    (Some(found.id.clone()), found.definition())
+                }
+                (None, Some(definition)) => (None, wire::panel_definition(&definition)?),
+                _ => anyhow::bail!("give exactly one of `panel` and `definition`"),
+            };
             let today = chrono::Local::now().date_naive();
-            let report =
-                sapphire_ledger_core::report::budget_report(ws, budget, year, month, today)?;
-            Ok(serde_json::to_string_pretty(&wire::budget_report(
-                budget, year, month, &report,
-            ))?)
+            let anchor = p
+                .anchor
+                .as_deref()
+                .map(parse_date)
+                .transpose()?
+                .unwrap_or(today);
+            let run = panel::run_panel(ws, &definition, anchor, p.offset.unwrap_or(0), today)?;
+            Ok(serde_json::to_string_pretty(&wire::panel_run(id, run)?)?)
+        })()
+        .map_err(render_error)
+    }
+
+    fn add_panel(&self, p: AddPanelParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let definition = wire::panel_definition(&p.definition)?;
+            let mut guard = self.lock_state();
+            let (id, dest) = ops::create_panel(guard.root(), definition)?;
+            let reload_err = guard.reload().err();
+            drop(guard);
+            self.notify_write(std::slice::from_ref(&dest));
+            Ok(write_result("created", "panel", &id, &dest, reload_err))
+        })()
+        .map_err(render_error)
+    }
+
+    fn update_panel(&self, p: UpdatePanelParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let definition = wire::panel_definition(&p.definition)?;
+            let mut guard = self.lock_state();
+            let (id, dest) = ops::update_panel(guard.root(), &p.panel, definition)?;
+            let reload_err = guard.reload().err();
+            drop(guard);
+            self.notify_write(std::slice::from_ref(&dest));
+            Ok(write_result("updated", "panel", &id, &dest, reload_err))
+        })()
+        .map_err(render_error)
+    }
+
+    fn delete_panel(&self, p: DeletePanelParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let mut guard = self.lock_state();
+            let (id, dest) = ops::delete_panel(guard.root(), &p.panel)?;
+            let reload_err = guard.reload().err();
+            drop(guard);
+            // A removed path is still a path the write touched: sync sends the delete.
+            self.notify_write(std::slice::from_ref(&dest));
+            Ok(write_result("deleted", "panel", &id, &dest, reload_err))
         })()
         .map_err(render_error)
     }
@@ -1150,40 +1273,125 @@ postings:
     }
 
     #[test]
-    fn a_budget_is_listed_and_reported_by_day() {
+    fn a_budget_with_panels_runs_by_name_and_a_query_runs_as_given() {
         let (_dir, server) = test_server();
         add_account(&server, "Expenses:Food", "Expense");
         add_account(&server, "Assets:Cash:JPY", "Asset");
-        assert!(add_budget(&server).contains("created budget"));
-        spend(&server, "2026-05-21", vec!["living".into()], "1200", true);
+        let created = server
+            .add_budget(api::AddBudgetParams {
+                name: "生活費".into(),
+                tag: "living".into(),
+                currency: "JPY".into(),
+                monthly_amount: "100000".into(),
+                balance_accounts: vec!["Assets:Cash:JPY".into()],
+                create_panels: true,
+            })
+            .expect("add_budget");
+        assert!(created.contains("created budget"), "{created}");
+        assert_eq!(created.matches("created panel").count(), 2, "{created}");
+        spend(&server, "2026-05-21", vec!["living".into()], "1200", false);
 
-        let budgets: Vec<api::Budget> =
-            serde_json::from_str(&server.list_budgets(EmptyParams {}).unwrap()).unwrap();
-        assert_eq!(budgets[0].name, "生活費");
-        assert_eq!(
-            budgets[0].balance_accounts[0].account_name.as_deref(),
-            Some("Assets:Cash:JPY")
+        let panels: Vec<api::Panel> =
+            serde_json::from_str(&server.list_panels(EmptyParams {}).unwrap()).unwrap();
+        let names: Vec<&str> = panels.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names.len(), 2);
+        assert!(
+            names.contains(&"生活費 pace") && names.contains(&"生活費 balance"),
+            "{names:?}"
         );
 
-        let report: api::BudgetReport = serde_json::from_str(
+        let run: api::PanelRun = serde_json::from_str(
             &server
-                .budget_report(api::BudgetReportParams {
-                    budget: "生活費".into(),
-                    month: "2026-05".into(),
+                .run_panel(api::RunPanelParams {
+                    panel: Some("生活費 pace".into()),
+                    definition: None,
+                    anchor: Some("2026-05-10".into()),
+                    offset: None,
                 })
                 .unwrap(),
         )
         .unwrap();
-        assert_eq!(report.month, "2026-05");
-        assert_eq!(report.daily_budget, "3225.81");
-        assert_eq!(report.days.len(), 31);
-        assert_eq!(report.days[20].spent_cumulative, "1200");
-        assert_eq!(report.days[30].budget_cumulative, "100000");
-        assert_eq!(report.days[20].actual_balance.as_deref(), Some("-1200"));
+        assert_eq!(run.buckets.len(), 31);
+        assert_eq!(run.plots[0].series[1].values[30].as_deref(), Some("100000"));
+        assert!(run.panel.is_some());
+
+        let result: api::SeriesResult = serde_json::from_str(
+            &server
+                .query_series(api::QuerySeriesParams {
+                    from: "2026-05-01".into(),
+                    to: "2026-05-31".into(),
+                    interval: api::Interval::Month,
+                    currency: None,
+                    series: vec![api::SeriesQuery {
+                        tags: vec!["living".into()],
+                        ..api::SeriesQuery::new(api::Measure::Flow)
+                    }],
+                })
+                .unwrap(),
+        )
+        .unwrap();
+        // Both sides of the posting carry the tag: +1200 and -1200.
+        assert_eq!(result.series[0].values, [Some("0".to_string())]);
+
+        let err = server
+            .run_panel(api::RunPanelParams {
+                panel: None,
+                definition: None,
+                anchor: None,
+                offset: None,
+            })
+            .unwrap_err();
+        assert!(
+            err.contains("exactly one of `panel` and `definition`"),
+            "{err}"
+        );
+        let deleted = server
+            .delete_panel(api::DeletePanelParams {
+                panel: "生活費 balance".into(),
+            })
+            .unwrap();
+        assert!(deleted.contains("deleted panel"), "{deleted}");
     }
 
     #[test]
-    fn update_budget_changes_the_amount_and_a_bad_month_is_refused() {
+    fn a_panel_is_added_updated_and_refused_when_wrong() {
+        let (_dir, server) = test_server();
+        let def = api::templates::net_worth();
+        assert!(
+            server
+                .add_panel(api::AddPanelParams {
+                    definition: def.clone()
+                })
+                .unwrap()
+                .contains("created panel")
+        );
+        let renamed = api::PanelDefinition {
+            name: "Worth".into(),
+            ..def.clone()
+        };
+        assert!(
+            server
+                .update_panel(api::UpdatePanelParams {
+                    panel: "Net worth".into(),
+                    definition: renamed
+                })
+                .unwrap()
+                .contains("updated panel")
+        );
+        let mut wrong = def;
+        wrong.name = "Wrong".into();
+        wrong.plots[0].series[0].query.budget = Some("x".into());
+        let err = server
+            .add_panel(api::AddPanelParams { definition: wrong })
+            .unwrap_err();
+        assert!(
+            err.contains("`budget` does not apply to a balance series"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn update_budget_changes_the_amount() {
         let (_dir, server) = test_server();
         add_account(&server, "Assets:Cash:JPY", "Asset");
         add_budget(&server);
@@ -1201,21 +1409,6 @@ postings:
         let budgets: Vec<api::Budget> =
             serde_json::from_str(&server.list_budgets(EmptyParams {}).unwrap()).unwrap();
         assert_eq!(budgets[0].monthly_amount, "120000");
-
-        let err = server
-            .budget_report(api::BudgetReportParams {
-                budget: "生活費".into(),
-                month: "May".into(),
-            })
-            .unwrap_err();
-        assert!(err.contains("YYYY-MM"), "got: {err}");
-        let err = server
-            .budget_report(api::BudgetReportParams {
-                budget: "nope".into(),
-                month: "2026-05".into(),
-            })
-            .unwrap_err();
-        assert!(err.contains("no budget nope"), "got: {err}");
     }
 
     #[test]
