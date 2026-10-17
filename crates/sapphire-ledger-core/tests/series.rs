@@ -474,6 +474,41 @@ fn budget_pace_follows_each_months_length() {
 }
 
 #[test]
+fn budget_remaining_counts_sub_accounts_of_a_balance_account() {
+    let books = Books::new();
+    ops::create_account(
+        books.0.path(),
+        "Assets:Bank:Savings".into(),
+        AccountType::Asset,
+        vec![],
+        d("2026-01-01"),
+        None,
+        vec![],
+    )
+    .unwrap();
+    books.tx(
+        "2026-09-30",
+        &[],
+        ("Assets:Bank:Savings", "50000"),
+        ("Income:Salary", "-50000"),
+        "JPY",
+    );
+    let remaining = SeriesQuery {
+        budget: Some("生活費".into()),
+        line: Some(BudgetLine::Remaining),
+        ..SeriesQuery::new(Measure::Budget)
+    };
+    let r = query_series(
+        &books.ws(),
+        &request("2026-10-01", "2026-10-01", Interval::Day, vec![remaining]),
+        d(TODAY),
+    )
+    .unwrap();
+    // 300000 in the bank + 50000 under it, less the first day's pace.
+    assert_eq!(r.series[0].values, vals(&[Some("346774.19")]));
+}
+
+#[test]
 fn budget_remaining_starts_from_the_balance_accounts() {
     let ws = Books::new().ws();
     let remaining = SeriesQuery {

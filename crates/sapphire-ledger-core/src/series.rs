@@ -623,12 +623,14 @@ fn budget_line(
     Ok((None, label, values.into_iter().map(Some).collect()))
 }
 
-/// The budget's balance accounts before `from`, in its currency, raw amounts.
+/// The budget's balance accounts (and everything under them) before `from`, in its currency, raw amounts.
 fn budget_opening(ws: &Workspace, budget: &Budget, from: NaiveDate) -> Decimal {
     let by_id: HashMap<&str, &Account> = ws.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
     let by_name: HashMap<&str, &Account> =
         ws.accounts.iter().map(|a| (a.name.as_str(), a)).collect();
-    let ids: HashSet<&str> = budget
+    // The same rule as a `balance` series: an account that is one of the
+    // balance accounts, or under one.
+    let names: Vec<&str> = budget
         .balance_accounts
         .iter()
         .filter_map(|r| {
@@ -640,7 +642,7 @@ fn budget_opening(ws: &Workspace, budget: &Budget, from: NaiveDate) -> Decimal {
             )
             .ok()
         })
-        .map(|a| a.id.as_str())
+        .map(|a| a.name.as_str())
         .collect();
     let mut total = Decimal::ZERO;
     for tx in ws.transactions.iter().filter(|tx| tx.date < from) {
@@ -653,7 +655,7 @@ fn budget_opening(ws: &Workspace, budget: &Budget, from: NaiveDate) -> Decimal {
             ) else {
                 continue;
             };
-            if ids.contains(account.id.as_str()) && p.currency == budget.currency {
+            if names.iter().any(|n| under(&account.name, n)) && p.currency == budget.currency {
                 total += p.amount;
             }
         }

@@ -56,7 +56,7 @@ The desktop's **Charts** screen (on the left rail) lists saved *panels* and
 draws the selected one: a panel is a chart saved as data in `panels/{id}.toml`
 (its period and the queries of each plot), so a new chart is a new file, not a
 new feature. A new budget makes its pace and balance panels, and **New panel**
-offers templates (budget pace, expenses by account, net worth, income and
+offers templates (budget pace, budget balance, expenses by account, net worth, income and
 expenses) to start an editor from. AI agents use the same panels as query
 presets: `list_panels` shows them, `run_panel` runs one, and `query_series`
 covers what none fits. On the command line, `sapphire-ledger panel list` and

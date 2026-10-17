@@ -387,7 +387,11 @@ of the [series query](#series-query-seriesrs) gives its two lines, `pace`
 (the monthly amount spread over each month's days) and `remaining` (the
 paid-from balance against that pace). `add_budget` with `create_panels` also
 makes the panels `<name> pace` and `<name> balance` from the templates below;
-the latter only when the budget has balance accounts. The earlier
+the latter only when the budget has balance accounts. `update_budget` keeps
+those two panels in step: each one that still equals the template of the budget
+as it was is rewritten from the template of the budget as it is now, so a new
+tag, currency, name or set of balance accounts reaches them; a panel the user
+has edited no longer equals the template and is left alone. The earlier
 `budget report` command and `budget_report` tool are replaced by `panel run`
 and `run_panel`.
 

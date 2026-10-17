@@ -693,11 +693,59 @@ impl LedgerMethods {
                 monthly_amount,
                 balance_accounts,
             };
+            let old = wire::budget(series::find_budget(&guard.workspace().budgets, &p.budget)?);
             let (id, dest) = ops::update_budget(guard.root(), &p.budget, changes)?;
-            let reload_err = guard.reload().err();
+            let mut reload_err = guard.reload().err();
+            // Panels still equal to the old budget's templates follow the
+            // budget; a panel the user changed is left alone.
+            let mut panels = Vec::new();
+            if reload_err.is_none() {
+                let new = wire::budget(series::find_budget(&guard.workspace().budgets, &id)?);
+                let templates = [
+                    (
+                        Some(api::templates::budget_pace(&old)),
+                        Some(api::templates::budget_pace(&new)),
+                    ),
+                    (
+                        api::templates::budget_balance(&old),
+                        api::templates::budget_balance(&new),
+                    ),
+                ];
+                let existing = guard
+                    .workspace()
+                    .panels
+                    .iter()
+                    .map(|p| Ok((p.id.clone(), wire::panel(p)?.definition())))
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                for (old_template, new_template) in templates {
+                    let (Some(old_template), Some(new_template)) = (old_template, new_template)
+                    else {
+                        continue;
+                    };
+                    for (panel_id, definition) in &existing {
+                        if *definition == old_template {
+                            let (_, path) = ops::update_panel(
+                                guard.root(),
+                                panel_id,
+                                wire::panel_definition(&new_template)?,
+                            )?;
+                            panels.push((panel_id.clone(), path));
+                        }
+                    }
+                }
+                if !panels.is_empty() {
+                    reload_err = guard.reload().err();
+                }
+            }
             drop(guard);
-            self.notify_write(std::slice::from_ref(&dest));
-            Ok(write_result("updated", "budget", &id, &dest, reload_err))
+            let mut touched = vec![dest.clone()];
+            touched.extend(panels.iter().map(|(_, path)| path.clone()));
+            self.notify_write(&touched);
+            let mut message = write_result("updated", "budget", &id, &dest, reload_err);
+            for (panel_id, path) in &panels {
+                message.push_str(&format!("\nupdated panel {panel_id}: {}", path.display()));
+            }
+            Ok(message)
         })()
         .map_err(render_error)
     }
@@ -1409,6 +1457,65 @@ postings:
         let budgets: Vec<api::Budget> =
             serde_json::from_str(&server.list_budgets(EmptyParams {}).unwrap()).unwrap();
         assert_eq!(budgets[0].monthly_amount, "120000");
+    }
+
+    #[test]
+    fn updating_a_budget_carries_its_template_panels_along() {
+        let (_dir, server) = test_server();
+        add_account(&server, "Expenses:Food", "Expense");
+        add_account(&server, "Assets:Cash:JPY", "Asset");
+        server
+            .add_budget(api::AddBudgetParams {
+                name: "living".into(),
+                tag: "living".into(),
+                currency: "JPY".into(),
+                monthly_amount: "100000".into(),
+                balance_accounts: vec!["Assets:Cash:JPY".into()],
+                create_panels: true,
+            })
+            .expect("add_budget");
+        let list = |server: &LedgerMethods| -> Vec<api::Panel> {
+            serde_json::from_str(&server.list_panels(EmptyParams {}).unwrap()).unwrap()
+        };
+        // The user customises the balance panel; the pace panel stays a template.
+        let mut balance = list(&server)
+            .into_iter()
+            .find(|p| p.name == "living balance")
+            .unwrap();
+        let mut custom = balance.definition();
+        custom.plots[0].title = Some("Mine".into());
+        server
+            .update_panel(api::UpdatePanelParams {
+                panel: balance.id.clone(),
+                definition: custom.clone(),
+            })
+            .unwrap();
+
+        let msg = server
+            .update_budget(api::UpdateBudgetParams {
+                budget: "living".into(),
+                name: Some("home".into()),
+                tag: Some("home".into()),
+                currency: None,
+                monthly_amount: None,
+                balance_accounts: None,
+            })
+            .unwrap();
+        assert_eq!(msg.matches("updated panel").count(), 1, "{msg}");
+
+        let panels = list(&server);
+        let pace = panels
+            .iter()
+            .find(|p| p.name == "home pace")
+            .expect("renamed");
+        assert_eq!(pace.plots[0].series[0].query.tags, ["home"]);
+        balance = panels
+            .iter()
+            .find(|p| p.name == "living balance")
+            .unwrap()
+            .clone();
+        assert_eq!(balance.definition(), custom);
+        assert_eq!(panels.len(), 2);
     }
 
     #[test]

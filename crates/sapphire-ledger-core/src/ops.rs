@@ -548,24 +548,26 @@ pub fn create_budget_with_panels(
     };
     check_budget(&budget)?;
     let definitions = panels(&budget)?;
-    let existing_panels = load_panels(root)?;
-    let mut names: HashSet<String> = existing_panels
-        .iter()
-        .map(|(p, _)| p.name.clone())
-        .collect();
-    let mut ids: HashSet<String> = existing_panels.iter().map(|(p, _)| p.id.clone()).collect();
     let mut planned = Vec::with_capacity(definitions.len());
-    for def in definitions {
-        let def = prepared(def)?;
-        if !names.insert(def.name.clone()) {
-            return Err(Error::Validation(format!(
-                "a panel named {} already exists",
-                def.name
-            )));
+    if !definitions.is_empty() {
+        let existing_panels = load_panels(root)?;
+        let mut names: HashSet<String> = existing_panels
+            .iter()
+            .map(|(p, _)| p.name.clone())
+            .collect();
+        let mut ids: HashSet<String> = existing_panels.iter().map(|(p, _)| p.id.clone()).collect();
+        for def in definitions {
+            let def = prepared(def)?;
+            if !names.insert(def.name.clone()) {
+                return Err(Error::Validation(format!(
+                    "a panel named {} already exists",
+                    def.name
+                )));
+            }
+            let panel_id = free_random_id(&ids, "panel")?;
+            ids.insert(panel_id.clone());
+            planned.push(panel_record(panel_id, def, timestamp));
         }
-        let panel_id = free_random_id(&ids, "panel")?;
-        ids.insert(panel_id.clone());
-        planned.push(panel_record(panel_id, def, timestamp));
     }
     save_toml(&dest, &budget)?;
     let mut written = Vec::with_capacity(planned.len());

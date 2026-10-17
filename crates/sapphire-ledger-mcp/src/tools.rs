@@ -202,7 +202,9 @@ impl LedgerTools {
 
     #[tool(
         description = "Change a budget, by id or name. Only the fields given change; \
-        a new amount also redraws past months. The file is rewritten from its known \
+        a new amount also redraws past months. The budget's `<name> pace` and \
+        `<name> balance` panels follow a change of name, tag, currency or balance \
+        accounts, unless they were edited. The file is rewritten from its known \
         fields: unknown keys and comments in it are not kept."
     )]
     pub async fn update_budget(

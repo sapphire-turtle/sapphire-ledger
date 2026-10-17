@@ -38,7 +38,7 @@ sapphire-ledger tx list --account Expenses:Food
 
 `assertion add`と`price add`も利用可能です。すべてMCPツールと同じ`core::ops`の薄いラッパーなので、誰が入力してもルールは同じです。
 
-デスクトップアプリの左レールにある**Charts**画面には、保存済みの*パネル*が一覧され、選んだパネルがグラフとして表示されます。パネルは`panels/{id}.toml`に保存されるグラフの定義（期間と各プロットのクエリ）なので、新しいグラフは機能追加ではなくファイル1つで増やせます。予算を作ると、そのペースと残高のパネルも作られ、**New panel**ではテンプレート（予算ペース、勘定別の支出、純資産、収入と支出）からエディタを始められます。AIエージェントも同じパネルをクエリのプリセットとして使えます：`list_panels`で一覧し、`run_panel`で実行し、合うものがなければ`query_series`を使います。コマンドラインでは`sapphire-ledger panel list`と`sapphire-ledger panel run <パネル名>`で表として表示できます（`panel run`は`budget report`の後継です）。
+デスクトップアプリの左レールにある**Charts**画面には、保存済みの*パネル*が一覧され、選んだパネルがグラフとして表示されます。パネルは`panels/{id}.toml`に保存されるグラフの定義（期間と各プロットのクエリ）なので、新しいグラフは機能追加ではなくファイル1つで増やせます。予算を作ると、そのペースと残高のパネルも作られ、**New panel**ではテンプレート（予算ペース、予算残高、勘定別の支出、純資産、収入と支出）からエディタを始められます。AIエージェントも同じパネルをクエリのプリセットとして使えます：`list_panels`で一覧し、`run_panel`で実行し、合うものがなければ`query_series`を使います。コマンドラインでは`sapphire-ledger panel list`と`sapphire-ledger panel run <パネル名>`で表として表示できます（`panel run`は`budget report`の後継です）。
 
 旧バージョンで作成した台帳（すべてTOML）は、一度`sapphire-ledger migrate`でアップグレードする必要があります（`--dry-run`で事前確認可）。実行前にコミットしておいてください。
 
