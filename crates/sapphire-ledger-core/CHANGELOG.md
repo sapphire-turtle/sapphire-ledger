@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-core-v0.1.0...sapphire-ledger-core-v0.2.0) - 2026-10-17
+
+### Added
+
+- *(core)* a budget's month as a day-by-day report
+- *(core)* budget records, their writes and their validation
+- *(core)* update an account's default tags
+- *(core)* copy accounts' default tags into new transactions
+
+### Fixed
+
+- final review — balance plot scale, aligned axes, month overflow, ops order
+
 ## [0.1.0](https://github.com/sapphire-turtle/sapphire-ledger/releases/tag/sapphire-ledger-core-v0.1.0) - 2026-10-15
 
 ### Added

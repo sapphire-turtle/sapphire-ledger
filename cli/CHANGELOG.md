@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.1.0...v0.2.0) - 2026-10-17
+
+### Added
+
+- *(cli)* budget report
+- *(mcp)* budget tools and update_account for agents
+- *(api)* [**breaking**] default tags and budgets in the ledger's API, version 2
+- *(core)* copy accounts' default tags into new transactions
+
 ## [0.1.0](https://github.com/sapphire-turtle/sapphire-ledger/releases/tag/v0.1.0) - 2026-10-15
 
 ### Added
