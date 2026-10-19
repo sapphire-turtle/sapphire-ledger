@@ -780,7 +780,8 @@ behind the same external-device token, and is served whatever `[mcp] http`
 says — so the listener is always up, on loopback by default. A `GET` takes
 `query_series`' parameters flat in the query string, with **one series per
 request** (`accounts`, `account_types` and `tags` repeat:
-`accounts=Expenses:Food&accounts=Expenses:Rent`), and answers rows:
+`accounts=Expenses:Food&accounts=Expenses:Rent`; an empty value, as an unset
+Grafana variable sends, is the parameter left out), and answers rows:
 
 ```json
 [{"date": "2026-10-01", "series": "Expenses:Food", "value": 12000}]

@@ -40,7 +40,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "
 toml.workspace = true
 tracing.workspace = true
 axum = "0.8"
-axum-extra = { version = "0.12", features = ["query"] }
+serde_html_form = "0.2"
 
 [dev-dependencies]
 sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp", "keys"] }

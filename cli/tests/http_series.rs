@@ -326,3 +326,21 @@ async fn no_ledger_is_503() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(error_of(&body).contains("workspace select"), "got: {body}");
 }
+
+/// An unset Grafana variable sends its parameter empty (`group_by=`): that is
+/// the parameter left out, not a value to refuse.
+#[tokio::test]
+async fn empty_values_are_absent() {
+    let f = fixture();
+    let (_, _, absent) = get(&f.router, &format!("measure=flow&{MAY_JUNE}")).await;
+    let (status, _, empty) = get(
+        &f.router,
+        &format!(
+            "measure=flow&{MAY_JUNE}&currency=&accounts=&account_types=&tags=&line=\
+             &group_by=&depth=&top=&label=&cumulative=&negate="
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "got: {empty}");
+    assert_eq!(empty, absent);
+}

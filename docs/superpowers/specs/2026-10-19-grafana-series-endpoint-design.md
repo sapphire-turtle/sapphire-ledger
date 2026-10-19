@@ -72,8 +72,10 @@ filter that does not fit the measure is an error, at most 1000 buckets and
 From Grafana the range comes from the time picker:
 `from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}`.
 
-Repeated parameters are read with `axum-extra`'s `Query` (serde_html_form);
-axum's own `Query` (serde_urlencoded) cannot collect them into a `Vec`.
+Repeated parameters are read with serde_html_form; axum's own `Query`
+(serde_urlencoded) cannot collect them into a `Vec`. **An empty value is the
+parameter left out** (`group_by=` is the default grouping): an unset Grafana
+variable sends its parameter empty.
 
 ### Response
 
@@ -144,7 +146,7 @@ not change.
 ### Dependencies
 
 `cli` gains `axum` (0.8, the version the framework already pulls in) and
-`axum-extra` with the `query` feature. The framework's `http` feature is
+`serde_html_form`. The framework's `http` feature is
 already on through `mcp`.
 
 ## Testing

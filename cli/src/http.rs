@@ -9,11 +9,10 @@
 
 use axum::Json;
 use axum::Router;
-use axum::extract::State;
+use axum::extract::{RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum_extra::extract::{Query, QueryRejection};
 use chrono::NaiveDate;
 use sapphire_ledger_api::{
     self as api, AccountType, BudgetLine, GroupBy, Interval, Measure, QuerySeriesParams,
@@ -33,7 +32,7 @@ pub fn routes(source: StateSource) -> Router {
 
 /// `query_series`' parameters with its one series, flat. Not a flattened
 /// [`SeriesQuery`]: serde_html_form cannot collect repeated keys through
-/// `flatten`.
+/// `flatten`. Read by [`parse_query`], which drops empty values first.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SeriesParams {
@@ -97,13 +96,10 @@ fn error(status: StatusCode, message: String) -> Response {
     (status, Json(json!({ "error": message }))).into_response()
 }
 
-async fn series(
-    State(source): State<StateSource>,
-    query: Result<Query<SeriesParams>, QueryRejection>,
-) -> Response {
-    let Query(params) = match query {
-        Ok(q) => q,
-        Err(rejection) => return error(StatusCode::BAD_REQUEST, rejection.body_text()),
+async fn series(State(source): State<StateSource>, RawQuery(query): RawQuery) -> Response {
+    let params = match parse_query(query.as_deref().unwrap_or_default()) {
+        Ok(params) => params,
+        Err(message) => return error(StatusCode::BAD_REQUEST, message),
     };
     let state = match source() {
         Ok(state) => state,
@@ -115,6 +111,21 @@ async fn series(
         Ok(result) => Json(rows(&result)).into_response(),
         Err(e) => error(StatusCode::BAD_REQUEST, format!("{e:#}")),
     }
+}
+
+/// The query string's parameters, an empty value being the parameter left
+/// out: an unset Grafana variable sends `group_by=`, which means the default,
+/// not a value to refuse.
+fn parse_query(query: &str) -> Result<SeriesParams, String> {
+    let given: Vec<&str> = query
+        .split('&')
+        .filter(|pair| {
+            pair.split_once('=')
+                .is_some_and(|(_, value)| !value.is_empty())
+        })
+        .collect();
+    serde_html_form::from_str(&given.join("&"))
+        .map_err(|e| format!("Failed to deserialize query string: {e}"))
 }
 
 /// By bucket, then in the result's series order; a `null` is no row.
