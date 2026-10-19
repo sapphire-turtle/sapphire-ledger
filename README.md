@@ -4,6 +4,8 @@
 
 A double-entry household ledger built on [sapphire-framework](https://github.com/fluo10/sapphire-framework) — file-based, local-first, made for human-agent collaboration.
 
+> **Works with any MCP client.** AI integration is a standard MCP server, so sapphire-ledger is not tied to [sapphire-agent](https://github.com/sapphire-turtle/sapphire-agent) despite the shared name — any AI harness that can act as an MCP client (Claude Code, Claude Desktop, …) can use it.
+
 ## Concept
 
 - **Plain text as source of truth** — accounts and transactions are Markdown files with YAML front matter (the description or comment is the body); assertions and prices are `.toml`. Read and edit them with any tool
