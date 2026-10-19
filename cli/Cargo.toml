@@ -43,5 +43,8 @@ axum = "0.8"
 axum-extra = { version = "0.12", features = ["query"] }
 
 [dev-dependencies]
+sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp", "keys"] }
+async-trait = "0.1"
 tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
 tower = { version = "0.5", features = ["util"] }

@@ -4554,6 +4554,7 @@ dependencies = [
  "sapphire-framework-backend",
  "sapphire-framework-gui",
  "sapphire-framework-ipc",
+ "sapphire-framework-keys",
  "sapphire-framework-mcp",
  "sapphire-framework-server",
  "sapphire-framework-workspace",
@@ -4857,6 +4858,7 @@ name = "sapphire-ledger"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "axum-extra",
  "chrono",
