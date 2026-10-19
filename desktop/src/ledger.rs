@@ -506,7 +506,7 @@ impl LedgerView {
                                 picked.push(a.default_tags.clone());
                             }
                             if ui
-                                .add_enabled(i >= 2, egui::Button::new("✕"))
+                                .add_enabled(i >= 2, egui::Button::new("×"))
                                 .on_hover_text("Remove this posting")
                                 .clicked()
                             {

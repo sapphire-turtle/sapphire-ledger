@@ -55,6 +55,7 @@ fn workspace(
         transactions,
         assertions,
         budgets: vec![],
+        panels: vec![],
         prices: vec![],
     }
 }

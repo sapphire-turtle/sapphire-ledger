@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 use rust_decimal::Decimal;
 use sapphire_ledger_api::{
     Account, AccountType, AddAccountParams, AddBudgetParams, AddTransactionParams, Budget,
-    PostingParam, UpdateAccountParams, UpdateBudgetParams,
+    BudgetLine, GroupBy, Interval, Mark, Measure, PanelDefinition, PanelSeries, Period, Plot,
+    PostingParam, SeriesQuery, UpdateAccountParams, UpdateBudgetParams, templates,
 };
 
 /// One posting row as typed.
@@ -307,6 +308,8 @@ pub struct BudgetForm {
     pub monthly_amount: String,
     /// The ids of the accounts it is paid from.
     pub balance_accounts: Vec<String>,
+    /// For a new budget: also make its pace and balance panels.
+    pub create_panels: bool,
 }
 
 impl BudgetForm {
@@ -318,6 +321,7 @@ impl BudgetForm {
             currency: currency.to_owned(),
             monthly_amount: String::new(),
             balance_accounts: vec![],
+            create_panels: true,
         }
     }
 
@@ -342,6 +346,7 @@ impl BudgetForm {
             currency: budget.currency.clone(),
             monthly_amount: budget.monthly_amount.clone(),
             balance_accounts,
+            create_panels: false,
         }
     }
 
@@ -374,6 +379,7 @@ impl BudgetForm {
             currency,
             monthly_amount,
             balance_accounts: self.balance_accounts.clone(),
+            create_panels: self.create_panels,
         })
     }
 
@@ -393,9 +399,306 @@ impl BudgetForm {
     }
 }
 
+/// The editor's view of one series: every field of every measure, as typed;
+/// [`PanelForm::to_definition`] keeps only those the measure takes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeriesRow {
+    pub measure: Measure,
+    pub accounts: Vec<String>,
+    pub account_types: Vec<AccountType>,
+    /// Comma-separated.
+    pub tags: String,
+    pub budget: Option<String>,
+    pub line: BudgetLine,
+    pub group_by: GroupBy,
+    pub depth: String,
+    pub top: String,
+    pub cumulative: bool,
+    pub negate: bool,
+    pub mark: Mark,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlotRow {
+    pub title: String,
+    pub stacked: bool,
+    pub series: Vec<SeriesRow>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PanelForm {
+    /// The panel being edited; `None` for a new one.
+    pub id: Option<String>,
+    pub name: String,
+    pub period: Period,
+    /// `None`: the period's default.
+    pub interval: Option<Interval>,
+    /// Empty: the ledger's base currency.
+    pub currency: String,
+    pub plots: Vec<PlotRow>,
+}
+
+impl SeriesRow {
+    pub fn new(measure: Measure) -> SeriesRow {
+        SeriesRow {
+            measure,
+            accounts: vec![],
+            account_types: vec![],
+            tags: String::new(),
+            budget: None,
+            line: BudgetLine::Pace,
+            group_by: GroupBy::None,
+            depth: String::new(),
+            top: String::new(),
+            cumulative: false,
+            negate: false,
+            mark: Mark::Line,
+            label: String::new(),
+        }
+    }
+
+    fn from_series(s: &PanelSeries) -> SeriesRow {
+        let q = &s.query;
+        SeriesRow {
+            measure: q.measure,
+            accounts: q.accounts.clone(),
+            account_types: q.account_types.clone(),
+            tags: q.tags.join(", "),
+            budget: q.budget.clone(),
+            line: q.line.unwrap_or(BudgetLine::Pace),
+            group_by: q.group_by.unwrap_or(GroupBy::None),
+            depth: q.depth.map(|d| d.to_string()).unwrap_or_default(),
+            top: q.top.map(|t| t.to_string()).unwrap_or_default(),
+            cumulative: q.cumulative,
+            negate: q.negate,
+            mark: s.mark.unwrap_or(Mark::Line),
+            label: q.label.clone().unwrap_or_default(),
+        }
+    }
+
+    fn to_series(&self) -> Result<PanelSeries, String> {
+        let count = |field: &str, raw: &str| -> Result<Option<u32>, String> {
+            match raw.trim() {
+                "" => Ok(None),
+                t => t
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|n| *n >= 1)
+                    .map(Some)
+                    .ok_or_else(|| {
+                        format!("{field} must be a whole number of 1 or more, not {t:?}")
+                    }),
+            }
+        };
+        let label = Some(self.label.trim().to_owned()).filter(|l| !l.is_empty());
+        let mut query = SeriesQuery {
+            label,
+            negate: self.negate,
+            ..SeriesQuery::new(self.measure)
+        };
+        match self.measure {
+            Measure::Budget => {
+                query.budget = Some(
+                    self.budget
+                        .clone()
+                        .ok_or("a budget series needs a budget")?,
+                );
+                query.line = Some(self.line);
+                query.cumulative = self.cumulative && self.line == BudgetLine::Pace;
+            }
+            Measure::Flow | Measure::Balance => {
+                query.accounts = self.accounts.clone();
+                query.account_types = self.account_types.clone();
+                query.tags = split_list(&self.tags);
+                if self.group_by != GroupBy::None {
+                    query.group_by = Some(self.group_by);
+                    query.top = count("top", &self.top)?;
+                }
+                if self.group_by == GroupBy::Account {
+                    query.depth = count("depth", &self.depth)?;
+                }
+                query.cumulative = self.cumulative && self.measure == Measure::Flow;
+            }
+        }
+        let mark = (self.mark == Mark::Bar).then_some(Mark::Bar);
+        Ok(PanelSeries { query, mark })
+    }
+}
+
+impl PanelForm {
+    /// One plot holding one flow series.
+    pub fn new() -> PanelForm {
+        PanelForm {
+            id: None,
+            name: String::new(),
+            period: Period::Month,
+            interval: None,
+            currency: String::new(),
+            plots: vec![PlotRow::new()],
+        }
+    }
+
+    pub fn from_definition(id: Option<String>, def: &PanelDefinition) -> PanelForm {
+        PanelForm {
+            id,
+            name: def.name.clone(),
+            period: def.period,
+            interval: def.interval,
+            currency: def.currency.clone().unwrap_or_default(),
+            plots: def
+                .plots
+                .iter()
+                .map(|p| PlotRow {
+                    title: p.title.clone().unwrap_or_default(),
+                    stacked: p.stacked,
+                    series: p.series.iter().map(SeriesRow::from_series).collect(),
+                })
+                .collect(),
+        }
+    }
+
+    pub fn to_definition(&self) -> Result<PanelDefinition, String> {
+        let name = self.name.trim();
+        if name.is_empty() {
+            return Err("a panel needs a name".into());
+        }
+        let plots = self
+            .plots
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                if p.series.is_empty() {
+                    return Err(format!("plot {} has no series", i + 1));
+                }
+                Ok(Plot {
+                    title: Some(p.title.trim().to_owned()).filter(|t| !t.is_empty()),
+                    stacked: p.stacked,
+                    series: p
+                        .series
+                        .iter()
+                        .map(SeriesRow::to_series)
+                        .collect::<Result<_, _>>()
+                        .map_err(|e| format!("plot {}: {e}", i + 1))?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        if plots.is_empty() {
+            return Err("a panel needs a plot".into());
+        }
+        Ok(PanelDefinition {
+            name: name.to_owned(),
+            period: self.period,
+            interval: self.interval,
+            currency: Some(self.currency.trim().to_owned()).filter(|c| !c.is_empty()),
+            plots,
+        })
+    }
+}
+
+impl PlotRow {
+    pub fn new() -> PlotRow {
+        PlotRow {
+            title: String::new(),
+            stacked: false,
+            series: vec![SeriesRow::new(Measure::Flow)],
+        }
+    }
+}
+
+/// The editor's ready-made panels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Template {
+    BudgetPace,
+    BudgetBalance,
+    ExpensesByAccount,
+    NetWorth,
+    IncomeAndExpenses,
+}
+
+impl Template {
+    pub const ALL: [Template; 5] = [
+        Template::BudgetPace,
+        Template::BudgetBalance,
+        Template::ExpensesByAccount,
+        Template::NetWorth,
+        Template::IncomeAndExpenses,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Template::BudgetPace => "Budget pace",
+            Template::BudgetBalance => "Budget balance",
+            Template::ExpensesByAccount => "Expenses by account",
+            Template::NetWorth => "Net worth",
+            Template::IncomeAndExpenses => "Income and expenses",
+        }
+    }
+
+    pub fn needs_budget(self) -> bool {
+        matches!(self, Template::BudgetPace | Template::BudgetBalance)
+    }
+
+    /// `None` when a budget template has no budget, or (balance) the budget
+    /// has no accounts it is paid from.
+    pub fn build(self, budget: Option<&Budget>) -> Option<PanelDefinition> {
+        match self {
+            Template::BudgetPace => budget.map(templates::budget_pace),
+            Template::BudgetBalance => budget.and_then(templates::budget_balance),
+            Template::ExpensesByAccount => Some(templates::expenses_by_account()),
+            Template::NetWorth => Some(templates::net_worth()),
+            Template::IncomeAndExpenses => Some(templates::income_and_expenses()),
+        }
+    }
+}
+
+/// What an account filter can name: every account, and every name above one.
+pub fn account_choices(accounts: &[Account]) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for a in accounts {
+        let segments: Vec<&str> = a.name.split(':').collect();
+        for depth in 1..=segments.len() {
+            names.insert(segments[..depth].join(":"));
+        }
+    }
+    names.into_iter().collect()
+}
+
+/// Move item `i` one place up or down, staying in bounds.
+pub fn move_item<T>(items: &mut [T], i: usize, up: bool) {
+    if up && i > 0 {
+        items.swap(i, i - 1);
+    } else if !up && i + 1 < items.len() {
+        items.swap(i, i + 1);
+    }
+}
+
+impl Default for PanelForm {
+    fn default() -> PanelForm {
+        PanelForm::new()
+    }
+}
+
+impl Default for PlotRow {
+    fn default() -> PlotRow {
+        PlotRow::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_budget_makes_its_panels_unless_told_not_to() {
+        let mut form = BudgetForm::new("JPY");
+        form.name = "生活費".into();
+        form.tag = "living".into();
+        form.monthly_amount = "100000".into();
+        assert!(form.to_add_params().unwrap().create_panels);
+        form.create_panels = false;
+        assert!(!form.to_add_params().unwrap().create_panels);
+    }
 
     fn tx(rows: &[(&str, &str, &str)]) -> TxForm {
         TxForm {
@@ -592,5 +895,141 @@ mod tests {
         assert_eq!(p.budget, "bud0001");
         assert_eq!(p.monthly_amount.as_deref(), Some("100000"));
         assert_eq!(p.balance_accounts, Some(vec!["acc0001".to_string()]));
+    }
+
+    fn account(id: &str, name: &str) -> Account {
+        Account {
+            id: id.into(),
+            name: name.into(),
+            account_type: sapphire_ledger_api::AccountType::Asset,
+            currencies: vec![],
+            opened_at: "2026-01-01".parse().unwrap(),
+            closed_at: None,
+            default_tags: vec![],
+            description: None,
+        }
+    }
+
+    fn budget_with_account() -> Budget {
+        Budget {
+            id: "b1".into(),
+            name: "生活費".into(),
+            tag: "living".into(),
+            currency: "JPY".into(),
+            monthly_amount: "100000".into(),
+            balance_accounts: vec![sapphire_ledger_api::AccountRef {
+                account_id: Some("acc".into()),
+                account_name: Some("Assets:Bank".into()),
+            }],
+        }
+    }
+
+    use sapphire_ledger_api::{BudgetLine, GroupBy, Interval, Mark, Measure, Period, templates};
+
+    #[test]
+    fn a_definition_survives_the_form() {
+        for def in [
+            templates::expenses_by_account(),
+            templates::net_worth(),
+            templates::income_and_expenses(),
+        ] {
+            assert_eq!(
+                PanelForm::from_definition(None, &def)
+                    .to_definition()
+                    .unwrap(),
+                def
+            );
+        }
+        let b = budget_with_account();
+        let def = templates::budget_balance(&b).unwrap();
+        assert_eq!(
+            PanelForm::from_definition(Some("p".into()), &def)
+                .to_definition()
+                .unwrap(),
+            def
+        );
+    }
+
+    #[test]
+    fn a_switched_measure_leaves_its_old_fields_behind() {
+        let mut form = PanelForm::from_definition(None, &templates::expenses_by_account());
+        let row = &mut form.plots[0].series[0];
+        row.measure = Measure::Budget;
+        row.budget = Some("b1".into());
+        let def = form.to_definition().unwrap();
+        let q = &def.plots[0].series[0].query;
+        assert!(
+            q.account_types.is_empty()
+                && q.group_by.is_none()
+                && q.depth.is_none()
+                && q.top.is_none()
+        );
+        assert_eq!(q.budget.as_deref(), Some("b1"));
+        assert_eq!(q.line, Some(BudgetLine::Pace));
+    }
+
+    #[test]
+    fn the_form_says_what_is_wrong() {
+        let mut form = PanelForm::new();
+        assert!(form.to_definition().unwrap_err().contains("name"));
+        form.name = "A".into();
+        form.plots[0].series[0].group_by = GroupBy::Account;
+        form.plots[0].series[0].depth = "two".into();
+        assert!(form.to_definition().unwrap_err().contains("depth"));
+        form.plots[0].series[0].depth = String::new();
+        form.plots[0].series[0].measure = Measure::Budget;
+        assert!(form.to_definition().unwrap_err().contains("budget"));
+    }
+
+    #[test]
+    fn a_new_form_is_one_plot_of_one_flow() {
+        let form = PanelForm::new();
+        assert_eq!(form.period, Period::Month);
+        assert_eq!(form.plots.len(), 1);
+        assert_eq!(form.plots[0].series[0].measure, Measure::Flow);
+        assert_eq!(form.plots[0].series[0].mark, Mark::Line);
+        assert_eq!(form.interval, None::<Interval>);
+    }
+
+    #[test]
+    fn account_choices_include_the_parents() {
+        let accounts = vec![
+            account("a1", "Expenses:Food:Lunch"),
+            account("a2", "Assets:Bank"),
+        ];
+        assert_eq!(
+            account_choices(&accounts),
+            [
+                "Assets",
+                "Assets:Bank",
+                "Expenses",
+                "Expenses:Food",
+                "Expenses:Food:Lunch"
+            ]
+        );
+    }
+
+    #[test]
+    fn templates_that_need_a_budget_say_so() {
+        let b = budget_with_account();
+        assert!(Template::BudgetPace.needs_budget());
+        assert!(Template::BudgetPace.build(None).is_none());
+        assert_eq!(
+            Template::BudgetPace.build(Some(&b)).unwrap().name,
+            "生活費 pace"
+        );
+        assert_eq!(Template::NetWorth.build(None).unwrap().name, "Net worth");
+        assert_eq!(Template::ALL.len(), 5);
+    }
+
+    #[test]
+    fn items_move_within_bounds() {
+        let mut v = vec![1, 2, 3];
+        move_item(&mut v, 0, true);
+        assert_eq!(v, [1, 2, 3]);
+        move_item(&mut v, 0, false);
+        assert_eq!(v, [2, 1, 3]);
+        move_item(&mut v, 2, true);
+        assert_eq!(v, [2, 3, 1]);
     }
 }

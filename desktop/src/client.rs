@@ -102,8 +102,8 @@ mod tests {
 
     use sapphire_framework::backend::protocol as proto;
     use sapphire_ledger_api::{
-        self as api, AddAccountParams, BudgetReport, BudgetReportParams, EmptyParams, PostingHit,
-        QueryPostingsParams, ValidationIssue,
+        self as api, AddAccountParams, EmptyParams, PostingHit, QueryPostingsParams,
+        RunPanelParams, ValidationIssue,
     };
     use sapphire_ledger_core::{AppKind, LEDGER_CTX};
 
@@ -187,6 +187,7 @@ mod tests {
         }
         let mut form = TxForm::new("2026-05-21".into(), "JPY");
         form.narration = "groceries".into();
+        form.tags = "living".into();
         form.postings = vec![
             PostingRow {
                 account: "Expenses:Food".into(),
@@ -241,18 +242,25 @@ mod tests {
             .call(api::ADD_BUDGET, budget.to_add_params().unwrap())
             .await
             .expect("add_budget");
-        let report: BudgetReport = client
+        let budgets: Vec<api::Budget> = client
+            .read(api::LIST_BUDGETS, EmptyParams {})
+            .await
+            .expect("budgets parse");
+        let run: api::PanelRun = client
             .read(
-                api::BUDGET_REPORT,
-                BudgetReportParams {
-                    budget: "生活費".into(),
-                    month: "2026-05".into(),
+                api::RUN_PANEL,
+                RunPanelParams {
+                    panel: None,
+                    definition: Some(api::templates::budget_pace(&budgets[0])),
+                    anchor: Some("2026-05-21".into()),
+                    offset: None,
                 },
             )
             .await
-            .expect("the report parses");
-        assert_eq!(report.days.len(), 31);
-        assert_eq!(report.days[20].actual_balance.as_deref(), Some("-1200"));
+            .expect("the run parses");
+        assert_eq!(run.buckets.len(), 31);
+        // The tagged spending, cumulated, on the 21st.
+        assert_eq!(run.plots[0].series[0].values[20].as_deref(), Some("1200"));
 
         let _: serde_json::Value = client
             .client()

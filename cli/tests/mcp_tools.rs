@@ -16,8 +16,8 @@ use sapphire_framework::mcp::ToolContext;
 use sapphire_framework::mcp::rmcp::handler::server::wrapper::Parameters;
 use sapphire_ledger::serve;
 use sapphire_ledger_api::{
-    AddAccountParams, AddBudgetParams, AddTransactionParams, BudgetReportParams, EmptyParams,
-    PostingParam, QueryPostingsParams,
+    AddAccountParams, AddBudgetParams, AddTransactionParams, EmptyParams, PostingParam,
+    QueryPostingsParams, RunPanelParams,
 };
 use sapphire_ledger_core::{AppKind, LEDGER_CTX};
 use sapphire_ledger_mcp::LedgerTools;
@@ -169,20 +169,20 @@ async fn the_tools_work_on_the_servers_workspace_over_ipc() {
             currency: "JPY".into(),
             monthly_amount: "100000".into(),
             balance_accounts: vec!["Assets:Cash".into()],
+            create_panels: true,
         }))
         .await
         .expect("add_budget");
-    let report = tools
-        .budget_report(Parameters(BudgetReportParams {
-            budget: "生活費".into(),
-            month: "2026-05".into(),
+    let run = tools
+        .run_panel(Parameters(RunPanelParams {
+            panel: Some("生活費 pace".into()),
+            definition: None,
+            anchor: Some("2026-05-10".into()),
+            offset: None,
         }))
         .await
-        .expect("budget_report");
-    assert!(
-        report.contains("\"daily_budget\": \"3225.81\""),
-        "got: {report}"
-    );
+        .expect("run_panel");
+    assert!(run.contains("\"100000\""), "got: {run}");
 
     // A refused write comes back as the ledger's reason.
     let err = tools

@@ -1,5 +1,5 @@
-//! The Charts screen: one budget's month as the server's `budget_report`
-//! answers it — the daily pace, and the balance path.
+//! The Charts screen: the workspace's panels, each drawn from the server's
+//! `run_panel`, and the budgets a panel can draw against.
 //!
 //! Like the Ledger screen it is a client of the running server: calls run on
 //! the tokio runtime and come back through a channel, and the view never
@@ -10,19 +10,19 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use chrono::Datelike;
-use egui_plot::{Bar, BarChart, HLine, HoverPosition, Legend, Line, LineStyle, Plot, PlotPoints};
-use rust_decimal::Decimal;
+use chrono::{Datelike, NaiveDate};
+use egui_plot::{Bar, BarChart, HoverPosition, Legend, Line, LineStyle, Plot, PlotPoints};
 use rust_decimal::prelude::ToPrimitive;
 use sapphire_framework::gui::egui::{self, Color32};
 use sapphire_ledger_api::{
-    self as api, Account, Budget, BudgetDay, BudgetReport, BudgetReportParams, EmptyParams,
+    self as api, Account, AccountType, AddPanelParams, Budget, BudgetLine, DeletePanelParams,
+    EmptyParams, GroupBy, Interval, Mark, Measure, Panel, PanelRun, Period, PlotRun,
+    RunPanelParams, UpdatePanelParams,
 };
 
 use crate::client::LedgerClient;
-use crate::form::{self, BudgetForm};
+use crate::form::{self, BudgetForm, PanelForm, PlotRow, SeriesRow, Template};
 
-/// As the Ledger screen: pick up what the CLI, an agent or sync wrote.
 const REFRESH_EVERY: Duration = Duration::from_secs(10);
 
 /// Numbers each load, so a reply for a budget or month no longer shown is
@@ -41,20 +41,50 @@ impl Generation {
 }
 
 struct Loaded {
+    panels: Vec<Panel>,
     budgets: Vec<Budget>,
     accounts: Vec<Account>,
-    report: Option<BudgetReport>,
+    /// The panel the run is of.
+    shown: Option<String>,
+    /// The panel's run; its error is shown in the body, not as a load error.
+    run: Option<Result<PanelRun, String>>,
+}
+
+/// Which form a write came from.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Source {
+    Budget,
+    Panel,
 }
 
 enum Reply {
     Loaded(u64, Result<Box<Loaded>, String>),
-    Written(Result<String, String>),
+    /// A write from `Source` finished; on success, select the panel of this
+    /// name next.
+    Written(Source, Option<String>, Result<String, String>),
+    /// The run of an unsaved definition.
+    Preview(u64, Result<PanelRun, String>),
+    Deleted(Result<String, String>),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Tab {
-    Pace,
-    Balance,
+/// What a row's `↑ ↓ ×` buttons asked for.
+#[derive(Clone, Copy)]
+enum Move {
+    Up,
+    Down,
+    Remove,
+}
+
+impl Move {
+    fn apply<T>(self, items: &mut Vec<T>, i: usize) {
+        match self {
+            Move::Up => form::move_item(items, i, true),
+            Move::Down => form::move_item(items, i, false),
+            Move::Remove => {
+                items.remove(i);
+            }
+        }
+    }
 }
 
 pub struct ChartsView {
@@ -64,20 +94,55 @@ pub struct ChartsView {
     replies: (mpsc::Sender<Reply>, mpsc::Receiver<Reply>),
     generation: Generation,
 
+    panels: Vec<Panel>,
     budgets: Vec<Budget>,
     accounts: Vec<Account>,
-    /// The budget shown, by id; `None` until the first load picks one.
+    /// The panel shown, by id.
     selected: Option<String>,
-    month: (i32, u32),
-    report: Option<BudgetReport>,
-    tab: Tab,
+    /// After a write: the panel to pick on the next load, by name.
+    select_name: Option<String>,
+    /// Periods from the current one.
+    offset: i32,
+    run: Option<Result<PanelRun, String>>,
     load_error: Option<String>,
     loading: bool,
     last_refresh: Option<Instant>,
 
-    form: Option<BudgetForm>,
+    budgets_open: bool,
+    budget_form: Option<BudgetForm>,
     sending: bool,
     form_error: Option<String>,
+
+    editor: Option<PanelForm>,
+    template: Template,
+    /// The budget a budget template is built from, by id.
+    template_budget: Option<String>,
+    /// The run shown is of the editor's unsaved definition.
+    previewing: bool,
+    confirm_delete: Option<Panel>,
+    /// A delete is sent and not answered yet.
+    deleting: bool,
+}
+
+/// Whether the body says there are no panels: not while an unsaved
+/// definition is previewed.
+fn shows_placeholder(no_panels: bool, loading: bool, previewing: bool) -> bool {
+    no_panels && !loading && !previewing
+}
+
+/// Panels in the order the list shows them: by name.
+fn sort_by_name(panels: &mut [Panel]) {
+    panels.sort_by(|a, b| a.name.cmp(&b.name));
+}
+
+/// The panel to show: the selected one if it is still there, else the one
+/// just written by name, else the first (`panels` is sorted by name).
+fn pick(panels: &[Panel], selected: Option<&str>, by_name: Option<&str>) -> Option<String> {
+    by_name
+        .and_then(|name| panels.iter().find(|p| p.name == name))
+        .or_else(|| selected.and_then(|id| panels.iter().find(|p| p.id == id)))
+        .or_else(|| panels.first())
+        .map(|p| p.id.clone())
 }
 
 impl ChartsView {
@@ -86,25 +151,32 @@ impl ChartsView {
         client: Arc<LedgerClient>,
         repaint: Arc<dyn Fn() + Send + Sync>,
     ) -> ChartsView {
-        let today = chrono::Local::now().date_naive();
         ChartsView {
             runtime,
             client,
             repaint,
             replies: mpsc::channel(),
             generation: Generation::default(),
+            panels: vec![],
             budgets: vec![],
             accounts: vec![],
             selected: None,
-            month: (today.year(), today.month()),
-            report: None,
-            tab: Tab::Pace,
+            select_name: None,
+            offset: 0,
+            run: None,
             load_error: None,
             loading: false,
             last_refresh: None,
-            form: None,
+            budgets_open: false,
+            budget_form: None,
             sending: false,
             form_error: None,
+            editor: None,
+            template: Template::ALL[0],
+            template_budget: None,
+            previewing: false,
+            confirm_delete: None,
+            deleting: false,
         }
     }
 
@@ -119,85 +191,87 @@ impl ChartsView {
         }
         ui.ctx().request_repaint_after(REFRESH_EVERY);
 
-        self.toolbar(ui);
-        ui.separator();
-        match &self.report {
-            None if self.budgets.is_empty() && !self.loading => {
-                ui.label("No budgets yet. A budget counts the transactions carrying its tag: start with New budget.");
-            }
-            None => {
-                ui.spinner();
-            }
-            Some(report) => {
-                let today = chrono::Local::now().date_naive();
-                let current = report.month == month_label((today.year(), today.month()));
-                ui.label(summary(report, current));
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.tab, Tab::Pace, "Daily pace");
-                    ui.selectable_value(&mut self.tab, Tab::Balance, "Balance path");
-                });
-                let colors = Colors::for_mode(ui.visuals().dark_mode);
-                match self.tab {
-                    Tab::Pace => pace_plots(ui, report, colors),
-                    Tab::Balance => match balance_series(report) {
-                        Some(series) => balance_plot(ui, series, colors),
-                        None => {
-                            ui.label("This budget has no accounts it is paid from. Choose some with Edit to see its balance path.");
-                        }
-                    },
-                }
-            }
-        }
-        self.form_window(ui.ctx());
+        egui::Panel::left("charts_panels")
+            .resizable(true)
+            .default_size(200.0)
+            .show(ui, |ui| self.panel_list(ui));
+        egui::CentralPanel::default().show(ui, |ui| {
+            self.toolbar(ui);
+            ui.separator();
+            self.body(ui);
+        });
+        self.budgets_window(ui.ctx());
+        self.budget_form_window(ui.ctx());
+        self.editor_window(ui.ctx());
+        self.delete_window(ui.ctx());
     }
 
     // ── server calls ────────────────────────────────────────────────────────
 
     fn refresh(&mut self) {
+        // The preview stays until Save or Close.
+        if self.previewing {
+            return;
+        }
         self.loading = true;
         self.last_refresh = Some(Instant::now());
         let n = self.generation.next();
         let client = Arc::clone(&self.client);
         let selected = self.selected.clone();
-        let month = month_label(self.month);
+        let select_name = self.select_name.clone();
+        let offset = self.offset;
         self.spawn(async move {
             let loaded = async {
+                let mut panels: Vec<Panel> = client.read(api::LIST_PANELS, EmptyParams {}).await?;
+                sort_by_name(&mut panels);
                 let budgets: Vec<Budget> = client.read(api::LIST_BUDGETS, EmptyParams {}).await?;
                 let accounts: Vec<Account> =
                     client.read(api::LIST_ACCOUNTS, EmptyParams {}).await?;
-                let shown = selected
-                    .filter(|id| budgets.iter().any(|b| &b.id == id))
-                    .or_else(|| budgets.first().map(|b| b.id.clone()));
-                let report = match shown {
-                    Some(budget) => Some(
+                let shown = pick(&panels, selected.as_deref(), select_name.as_deref());
+                let run = match &shown {
+                    Some(id) => Some(
                         client
-                            .read(api::BUDGET_REPORT, BudgetReportParams { budget, month })
-                            .await?,
+                            .read::<PanelRun>(
+                                api::RUN_PANEL,
+                                RunPanelParams {
+                                    panel: Some(id.clone()),
+                                    definition: None,
+                                    anchor: None,
+                                    offset: Some(offset),
+                                },
+                            )
+                            .await,
                     ),
                     None => None,
                 };
                 Ok(Box::new(Loaded {
+                    panels,
                     budgets,
                     accounts,
-                    report,
+                    shown,
+                    run,
                 }))
             };
             Reply::Loaded(n, loaded.await)
         });
     }
 
-    /// Show another budget or month now, not at the next tick.
+    /// Show another panel or period now, not at the next tick.
     fn reload_now(&mut self) {
-        // A load already in flight is for the old budget or month.
+        // A load already in flight is for the old panel or period.
         self.generation.next();
-        self.report = None;
+        self.run = None;
         self.loading = false;
         self.last_refresh = None;
     }
 
     fn send_form(&mut self) {
-        let Some(form) = &self.form else { return };
+        let Some(form) = &self.budget_form else {
+            return;
+        };
         let client = Arc::clone(&self.client);
+        let select =
+            (form.id.is_none() && form.create_panels).then(|| format!("{} pace", form.name.trim()));
         let call = match &form.id {
             None => form
                 .to_add_params()
@@ -210,11 +284,94 @@ impl ChartsView {
             Ok((method, Ok(params))) => {
                 self.sending = true;
                 self.form_error = None;
-                self.spawn(async move { Reply::Written(client.call(method, params).await) });
+                self.spawn(async move {
+                    Reply::Written(Source::Budget, select, client.call(method, params).await)
+                });
             }
             Ok((_, Err(e))) => self.form_error = Some(e.to_string()),
             Err(e) => self.form_error = Some(e),
         }
+    }
+
+    /// Run the editor's unsaved definition.
+    fn preview(&mut self) {
+        let Some(form) = &self.editor else {
+            return;
+        };
+        match form.to_definition() {
+            Ok(definition) => {
+                self.form_error = None;
+                self.previewing = true;
+                // A load in flight is overtaken; its reply will not reset this.
+                self.loading = false;
+                let n = self.generation.next();
+                let client = Arc::clone(&self.client);
+                let offset = self.offset;
+                self.spawn(async move {
+                    Reply::Preview(
+                        n,
+                        client
+                            .read::<PanelRun>(
+                                api::RUN_PANEL,
+                                RunPanelParams {
+                                    panel: None,
+                                    definition: Some(definition),
+                                    anchor: None,
+                                    offset: Some(offset),
+                                },
+                            )
+                            .await,
+                    )
+                });
+            }
+            Err(e) => self.form_error = Some(e),
+        }
+    }
+
+    fn save_panel(&mut self) {
+        let Some(form) = &self.editor else {
+            return;
+        };
+        let definition = match form.to_definition() {
+            Ok(d) => d,
+            Err(e) => {
+                self.form_error = Some(e);
+                return;
+            }
+        };
+        let client = Arc::clone(&self.client);
+        let select = Some(definition.name.clone());
+        let call = match &form.id {
+            None => {
+                serde_json::to_value(AddPanelParams { definition }).map(|p| (api::ADD_PANEL, p))
+            }
+            Some(panel) => serde_json::to_value(UpdatePanelParams {
+                panel: panel.clone(),
+                definition,
+            })
+            .map(|p| (api::UPDATE_PANEL, p)),
+        };
+        match call {
+            Ok((method, params)) => {
+                self.sending = true;
+                self.form_error = None;
+                self.spawn(async move {
+                    Reply::Written(Source::Panel, select, client.call(method, params).await)
+                });
+            }
+            Err(e) => self.form_error = Some(e.to_string()),
+        }
+    }
+
+    fn delete_panel(&mut self, panel: String) {
+        self.deleting = true;
+        let client = Arc::clone(&self.client);
+        self.spawn(async move {
+            Reply::Deleted(match serde_json::to_value(DeletePanelParams { panel }) {
+                Ok(params) => client.call(api::DELETE_PANEL, params).await,
+                Err(e) => Err(e.to_string()),
+            })
+        });
     }
 
     fn spawn(&self, call: impl Future<Output = Reply> + Send + 'static) {
@@ -231,10 +388,14 @@ impl ChartsView {
             match reply {
                 Reply::Loaded(n, _) if !self.generation.is_current(n) => {}
                 Reply::Loaded(_, Ok(loaded)) => {
-                    self.selected = loaded.report.as_ref().map(|r| r.budget.id.clone());
+                    let loaded = *loaded;
+                    self.panels = loaded.panels;
+                    sort_by_name(&mut self.panels);
                     self.budgets = loaded.budgets;
                     self.accounts = loaded.accounts;
-                    self.report = loaded.report;
+                    self.selected = loaded.shown;
+                    self.run = loaded.run;
+                    self.select_name = None;
                     self.load_error = None;
                     self.loading = false;
                 }
@@ -243,12 +404,40 @@ impl ChartsView {
                     self.load_error = Some(e);
                     self.loading = false;
                 }
-                Reply::Written(Ok(_)) => {
-                    self.sending = false;
-                    self.form = None;
+                Reply::Preview(n, _) if !self.generation.is_current(n) => {}
+                Reply::Preview(_, run) => self.run = Some(run),
+                Reply::Deleted(Ok(_)) => {
+                    self.deleting = false;
+                    self.selected = None;
+                    let deleted = self.confirm_delete.take();
+                    if let (Some(p), Some(form)) = (&deleted, &self.editor)
+                        && form.id.as_deref() == Some(p.id.as_str())
+                    {
+                        self.editor = None;
+                    }
+                    self.previewing = false;
                     self.reload_now();
                 }
-                Reply::Written(Err(e)) => {
+                Reply::Deleted(Err(e)) => {
+                    self.deleting = false;
+                    self.form_error = Some(e);
+                }
+                Reply::Written(source, select, Ok(_)) => {
+                    self.sending = false;
+                    match source {
+                        Source::Budget => self.budget_form = None,
+                        Source::Panel => {
+                            self.editor = None;
+                            self.previewing = false;
+                        }
+                    }
+                    self.select_name = select;
+                    if self.select_name.is_some() {
+                        self.offset = 0;
+                    }
+                    self.reload_now();
+                }
+                Reply::Written(_, _, Err(e)) => {
                     self.sending = false;
                     self.form_error = Some(e);
                 }
@@ -256,63 +445,94 @@ impl ChartsView {
         }
     }
 
-    // ── panels ──────────────────────────────────────────────────────────────
+    // ── screen parts ────────────────────────────────────────────────────────
+
+    fn panel_list(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Panels");
+        let mut clicked = None;
+        for p in &self.panels {
+            let on = self.selected.as_deref() == Some(p.id.as_str());
+            if ui.selectable_label(on, &p.name).clicked() {
+                clicked = Some(p.id.clone());
+            }
+        }
+        if self.panels.is_empty() {
+            ui.weak("No panels yet.");
+        }
+        if let Some(id) = clicked {
+            self.selected = Some(id);
+            // A name pending from a write that failed to load would override the click.
+            self.select_name = None;
+            self.offset = 0;
+            self.previewing = false;
+            self.reload_now();
+        }
+        ui.separator();
+        if ui.button("New panel").clicked() {
+            self.editor = Some(PanelForm::new());
+            self.form_error = None;
+        }
+        if ui.button("Budgets…").clicked() {
+            self.budgets_open = true;
+        }
+    }
 
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            // Owned, so the arms below can call `&mut self` methods.
-            let shown: Option<Budget> = self
-                .budgets
+            let shown = self
+                .panels
                 .iter()
-                .find(|b| Some(&b.id) == self.selected.as_ref())
+                .find(|p| self.selected.as_deref() == Some(p.id.as_str()))
                 .cloned();
-            let mut picked = self.selected.clone();
-            egui::ComboBox::from_id_salt("charts_budget")
-                .selected_text(shown.as_ref().map_or("Budget…", |b| b.name.as_str()))
-                .show_ui(ui, |ui| {
-                    for b in &self.budgets {
-                        ui.selectable_value(&mut picked, Some(b.id.clone()), &b.name);
-                    }
-                });
-            let mut month = self.month;
+            if let Some(p) = &shown {
+                ui.strong(&p.name);
+            }
+            if self.previewing {
+                ui.weak("Preview — not saved");
+            }
+            let mut offset = self.offset;
             if ui
                 .small_button("◀")
-                .on_hover_text("Previous month")
+                .on_hover_text("Previous period")
                 .clicked()
             {
-                month = shift_month(month, -1);
+                offset -= 1;
             }
-            ui.monospace(month_label(month));
-            if ui.small_button("▶").on_hover_text("Next month").clicked() {
-                month = shift_month(month, 1);
+            match &self.run {
+                Some(Ok(run)) => ui.monospace(period_label(run)),
+                _ => ui.monospace(""),
+            };
+            if ui.small_button("▶").on_hover_text("Next period").clicked() {
+                offset += 1;
             }
-            if picked != self.selected || month != self.month {
-                self.selected = picked;
-                self.month = month;
-                self.reload_now();
-            }
-            let can_write = self.load_error.is_none();
-            if ui
-                .add_enabled(can_write, egui::Button::new("New budget"))
-                .clicked()
-            {
-                let currency = shown
-                    .as_ref()
-                    .map_or("JPY", |b| b.currency.as_str())
-                    .to_owned();
-                self.form = Some(BudgetForm::new(&currency));
-                self.form_error = None;
-            }
-            if ui
-                .add_enabled(can_write && shown.is_some(), egui::Button::new("Edit"))
-                .clicked()
-                && let Some(b) = &shown
-            {
-                self.form = Some(BudgetForm::edit(b, &self.accounts));
-                self.form_error = None;
+            if offset != self.offset {
+                self.offset = offset;
+                if self.previewing {
+                    self.preview();
+                } else {
+                    self.reload_now();
+                }
             }
             if self.loading {
                 ui.spinner();
+            }
+            if ui
+                .add_enabled(shown.is_some(), egui::Button::new("Edit"))
+                .clicked()
+                && let Some(p) = &shown
+            {
+                self.editor = Some(PanelForm::from_definition(
+                    Some(p.id.clone()),
+                    &p.definition(),
+                ));
+                self.form_error = None;
+            }
+            if ui
+                .add_enabled(shown.is_some(), egui::Button::new("Delete"))
+                .clicked()
+            {
+                self.confirm_delete = shown.clone();
+                self.form_error = None;
             }
         });
         if let Some(e) = &self.load_error {
@@ -320,8 +540,210 @@ impl ChartsView {
         }
     }
 
-    fn form_window(&mut self, ctx: &egui::Context) {
-        let Some(form) = &mut self.form else { return };
+    fn body(&mut self, ui: &mut egui::Ui) {
+        if shows_placeholder(self.panels.is_empty(), self.loading, self.previewing) {
+            ui.label("No panels yet. Make one from a budget under Budgets…, or with an agent's add_panel.");
+            return;
+        }
+        match &self.run {
+            None => {
+                ui.spinner();
+            }
+            Some(Err(e)) => {
+                ui.colored_label(ui.visuals().error_fg_color, e);
+            }
+            Some(Ok(run)) => draw_run(ui, run),
+        }
+    }
+
+    fn delete_window(&mut self, ctx: &egui::Context) {
+        let Some(panel) = &self.confirm_delete else {
+            return;
+        };
+        let (mut delete, mut cancel) = (false, false);
+        egui::Window::new("Delete panel")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(format!("Delete panel {}? Its file is removed.", panel.name));
+                if let Some(e) = &self.form_error {
+                    ui.colored_label(ui.visuals().error_fg_color, e);
+                }
+                ui.horizontal(|ui| {
+                    delete = ui
+                        .add_enabled(!self.deleting, egui::Button::new("Delete"))
+                        .clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if delete {
+            let id = panel.id.clone();
+            self.form_error = None;
+            self.delete_panel(id);
+        } else if cancel {
+            self.confirm_delete = None;
+            self.form_error = None;
+        }
+    }
+
+    fn editor_window(&mut self, ctx: &egui::Context) {
+        let Some(mut form) = self.editor.take() else {
+            return;
+        };
+        let choices = form::account_choices(&self.accounts);
+        let title = if form.id.is_some() {
+            "Edit panel"
+        } else {
+            "New panel"
+        };
+        let (mut open, mut preview, mut save) = (true, false, false);
+        egui::Window::new(title)
+            .open(&mut open)
+            .resizable(true)
+            .default_width(560.0)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(520.0)
+                    .show(ui, |ui| {
+                        self.template_row(ui, &mut form);
+                        ui.separator();
+                        panel_fields(ui, &mut form);
+                        plot_rows(ui, &mut form, &self.budgets, &self.accounts, &choices);
+                        if ui.button("Add plot").clicked() {
+                            form.plots.push(PlotRow::new());
+                        }
+                    });
+                ui.separator();
+                if let Some(e) = &self.form_error {
+                    ui.colored_label(ui.visuals().error_fg_color, e);
+                }
+                ui.horizontal(|ui| {
+                    preview = ui
+                        .add_enabled(!self.sending, egui::Button::new("Preview"))
+                        .clicked();
+                    save = ui
+                        .add_enabled(!self.sending, egui::Button::new("Save"))
+                        .clicked();
+                    if self.sending {
+                        ui.spinner();
+                    }
+                });
+            });
+        if !open {
+            self.form_error = None;
+            if self.previewing {
+                self.previewing = false;
+                self.reload_now();
+            }
+            return;
+        }
+        self.editor = Some(form);
+        if preview {
+            self.preview();
+        } else if save {
+            self.save_panel();
+        }
+    }
+
+    fn template_row(&mut self, ui: &mut egui::Ui, form: &mut PanelForm) {
+        ui.horizontal(|ui| {
+            ui.label("Template");
+            egui::ComboBox::from_id_salt("panel_template")
+                .selected_text(self.template.label())
+                .show_ui(ui, |ui| {
+                    for t in Template::ALL {
+                        ui.selectable_value(&mut self.template, t, t.label());
+                    }
+                });
+            if self.template.needs_budget() {
+                let chosen = self
+                    .budgets
+                    .iter()
+                    .find(|b| self.template_budget.as_deref() == Some(b.id.as_str()))
+                    .map_or("budget", |b| b.name.as_str());
+                egui::ComboBox::from_id_salt("template_budget")
+                    .selected_text(chosen)
+                    .show_ui(ui, |ui| {
+                        for b in &self.budgets {
+                            ui.selectable_value(
+                                &mut self.template_budget,
+                                Some(b.id.clone()),
+                                &b.name,
+                            );
+                        }
+                    });
+            }
+            if ui.button("Use").clicked() {
+                let budget = self
+                    .budgets
+                    .iter()
+                    .find(|b| self.template_budget.as_deref() == Some(b.id.as_str()));
+                match self.template.build(budget) {
+                    Some(def) => {
+                        *form = PanelForm::from_definition(form.id.clone(), &def);
+                        self.form_error = None;
+                    }
+                    None => {
+                        self.form_error = Some(
+                            "choose a budget (the balance template also needs one paid from accounts)"
+                                .into(),
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    fn budgets_window(&mut self, ctx: &egui::Context) {
+        if !self.budgets_open {
+            return;
+        }
+        let mut open = true;
+        let mut edit = None;
+        let mut new = false;
+        egui::Window::new("Budgets")
+            .open(&mut open)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                if self.budgets.is_empty() {
+                    ui.weak("No budgets yet.");
+                }
+                for b in &self.budgets {
+                    ui.horizontal(|ui| {
+                        ui.label(format!(
+                            "{} · {} {} / month",
+                            b.name,
+                            grouped(&b.monthly_amount),
+                            b.currency
+                        ));
+                        if ui.button("Edit").clicked() {
+                            edit = Some(b.clone());
+                        }
+                    });
+                }
+                ui.separator();
+                new = ui.button("New budget").clicked();
+            });
+        self.budgets_open = open;
+        if let Some(b) = edit {
+            self.budget_form = Some(BudgetForm::edit(&b, &self.accounts));
+            self.form_error = None;
+        } else if new {
+            let currency = self
+                .budgets
+                .first()
+                .map_or("JPY", |b| b.currency.as_str())
+                .to_owned();
+            self.budget_form = Some(BudgetForm::new(&currency));
+            self.form_error = None;
+        }
+    }
+
+    fn budget_form_window(&mut self, ctx: &egui::Context) {
+        let Some(form) = &mut self.budget_form else {
+            return;
+        };
         let mut assets: Vec<&Account> = self
             .accounts
             .iter()
@@ -370,6 +792,12 @@ impl ChartsView {
                     }
                 }
                 ui.separator();
+                if form.id.is_none() {
+                    ui.checkbox(
+                        &mut form.create_panels,
+                        "Create its panels (pace, and balance when paid from accounts)",
+                    );
+                }
                 if let Some(e) = &self.form_error {
                     ui.colored_label(ui.visuals().error_fg_color, e);
                 }
@@ -383,7 +811,7 @@ impl ChartsView {
                 });
             });
         if !open {
-            self.form = None;
+            self.budget_form = None;
             self.form_error = None;
         } else if submit {
             self.send_form();
@@ -391,131 +819,376 @@ impl ChartsView {
     }
 }
 
-// ── plots ───────────────────────────────────────────────────────────────────
+// ── the panel editor ────────────────────────────────────────────────────────
 
-/// Actual and plan, stepped per theme; validated as a pair with the dataviz
-/// validator in both modes. Plan is also dashed, so colour is never alone.
-#[derive(Clone, Copy)]
-struct Colors {
-    actual: Color32,
-    plan: Color32,
-}
-
-impl Colors {
-    fn for_mode(dark: bool) -> Colors {
-        if dark {
-            Colors {
-                actual: Color32::from_rgb(0x39, 0x87, 0xe5),
-                plan: Color32::from_rgb(0xd9, 0x59, 0x26),
-            }
-        } else {
-            Colors {
-                actual: Color32::from_rgb(0x2a, 0x78, 0xd6),
-                plan: Color32::from_rgb(0xeb, 0x68, 0x34),
-            }
-        }
+fn period_name(p: Period) -> &'static str {
+    match p {
+        Period::Month => "Month",
+        Period::Year => "Year",
+        Period::Last12Months => "Last 12 months",
     }
 }
 
-/// A plot of one month: day 1..=n on x, nothing to pan or zoom.
-fn month_plot<'a>(id: &'a str, days: usize) -> Plot<'a> {
-    Plot::new(id)
-        .legend(Legend::default())
-        .allow_drag(false)
-        .allow_zoom(false)
-        .allow_scroll(false)
-        .allow_boxed_zoom(false)
-        .include_x(0.5)
-        .include_x(days as f64 + 0.5)
-        .y_axis_min_width(72.0)
-        .link_axis("budget_month", [true, false])
-        .link_cursor("budget_month", [true, false])
-        .x_axis_formatter(|mark, _| format!("{}", mark.value.round() as i64))
-        .y_axis_formatter(|mark, _| grouped(&format!("{}", mark.value.round() as i64)))
-        .label_formatter(|pos: &HoverPosition<'_>| match pos {
-            HoverPosition::NearDataPoint {
-                plot_name,
-                position,
-                ..
-            } => Some(format!(
-                "{plot_name}\nday {}: {}",
-                position.x.round() as i64,
-                grouped(&format!("{:.2}", position.y)),
-            )),
-            HoverPosition::Elsewhere { .. } => None,
-        })
+fn interval_name(i: Option<Interval>) -> &'static str {
+    match i {
+        None => "Default",
+        Some(Interval::Day) => "Day",
+        Some(Interval::Week) => "Week",
+        Some(Interval::Month) => "Month",
+        Some(Interval::Year) => "Year",
+    }
 }
 
-fn pace_plots(ui: &mut egui::Ui, report: &BudgetReport, c: Colors) {
-    let s = pace_series(report);
-    let n = report.days.len();
-    let tall = (ui.available_height() * 0.62).max(160.0);
-    month_plot("budget_pace", n)
-        .include_y(0.0)
-        .height(tall)
-        .show(ui, |p| {
-            p.line(
-                Line::new("Budget so far", PlotPoints::from(s.budget))
-                    .color(c.plan)
-                    .width(2.0)
-                    .style(LineStyle::dashed_loose()),
-            );
-            p.line(
-                Line::new("Spent so far", PlotPoints::from(s.spent))
-                    .color(c.actual)
-                    .width(2.0),
-            );
-        });
-    month_plot("budget_daily", n)
-        .include_y(0.0)
-        .height(ui.available_height().max(100.0))
-        .show(ui, |p| {
-            let bars = s
-                .daily
-                .iter()
-                .map(|[x, y]| Bar::new(*x, *y).width(0.7))
-                .collect();
-            p.bar_chart(BarChart::new("Spent that day", bars).color(c.actual));
-            p.hline(
-                HLine::new("Daily budget", s.daily_budget)
-                    .color(c.plan)
-                    .width(2.0)
-                    .style(LineStyle::dashed_loose()),
-            );
+fn measure_name(m: Measure) -> &'static str {
+    match m {
+        Measure::Flow => "Flow",
+        Measure::Balance => "Balance",
+        Measure::Budget => "Budget",
+    }
+}
+
+fn group_name(g: GroupBy) -> &'static str {
+    match g {
+        GroupBy::None => "None",
+        GroupBy::Account => "Account",
+        GroupBy::AccountType => "Account type",
+        GroupBy::Tag => "Tag",
+    }
+}
+
+fn line_name(l: BudgetLine) -> &'static str {
+    match l {
+        BudgetLine::Pace => "Pace",
+        BudgetLine::Remaining => "Remaining",
+    }
+}
+
+fn mark_name(m: Mark) -> &'static str {
+    match m {
+        Mark::Line => "Line",
+        Mark::Bar => "Bar",
+    }
+}
+
+/// A combo box over `options`, each shown by `name`.
+fn pick_one<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    salt: impl std::hash::Hash + std::fmt::Debug,
+    value: &mut T,
+    options: &[T],
+    name: fn(T) -> &'static str,
+) {
+    egui::ComboBox::from_id_salt(salt)
+        .selected_text(name(*value))
+        .show_ui(ui, |ui| {
+            for o in options {
+                ui.selectable_value(value, *o, name(*o));
+            }
         });
 }
 
-fn balance_plot(ui: &mut egui::Ui, s: BalanceSeries, c: Colors) {
-    month_plot("budget_balance", s.planned.len())
-        .height(ui.available_height().max(160.0))
-        .show(ui, |p| {
-            p.line(
-                Line::new("Planned balance", PlotPoints::from(s.planned))
-                    .color(c.plan)
-                    .width(2.0)
-                    .style(LineStyle::dashed_loose()),
+/// `↑ ↓ ×` for one row of a list of `len`.
+fn move_buttons(ui: &mut egui::Ui, len: usize) -> Option<Move> {
+    let mut action = None;
+    if ui.small_button("↑").on_hover_text("Move up").clicked() {
+        action = Some(Move::Up);
+    }
+    if ui.small_button("↓").on_hover_text("Move down").clicked() {
+        action = Some(Move::Down);
+    }
+    if ui
+        .add_enabled(len > 1, egui::Button::new("×").small())
+        .on_hover_text("Remove")
+        .clicked()
+    {
+        action = Some(Move::Remove);
+    }
+    action
+}
+
+fn panel_fields(ui: &mut egui::Ui, form: &mut PanelForm) {
+    egui::Grid::new("panel_fields")
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.label("Name");
+            ui.text_edit_singleline(&mut form.name);
+            ui.end_row();
+            ui.label("Period");
+            pick_one(
+                ui,
+                "panel_period",
+                &mut form.period,
+                &[Period::Month, Period::Year, Period::Last12Months],
+                period_name,
             );
-            p.line(
-                Line::new("Actual balance", PlotPoints::from(s.actual))
-                    .color(c.actual)
-                    .width(2.0),
+            ui.end_row();
+            ui.label("Interval");
+            pick_one(
+                ui,
+                "panel_interval",
+                &mut form.interval,
+                &[
+                    None,
+                    Some(Interval::Day),
+                    Some(Interval::Week),
+                    Some(Interval::Month),
+                    Some(Interval::Year),
+                ],
+                interval_name,
             );
+            ui.end_row();
+            ui.label("Currency");
+            ui.add(egui::TextEdit::singleline(&mut form.currency).hint_text("base"));
+            ui.end_row();
         });
 }
 
-// ── pure helpers ────────────────────────────────────────────────────────────
-
-struct PaceSeries {
-    budget: Vec<[f64; 2]>,
-    /// Elapsed days only: the line stops at today.
-    spent: Vec<[f64; 2]>,
-    daily: Vec<[f64; 2]>,
-    daily_budget: f64,
+fn plot_rows(
+    ui: &mut egui::Ui,
+    form: &mut PanelForm,
+    budgets: &[Budget],
+    accounts: &[Account],
+    choices: &[String],
+) {
+    let plot_count = form.plots.len();
+    let mut plot_move = None;
+    for (pi, plot) in form.plots.iter_mut().enumerate() {
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.strong(format!("Plot {}", pi + 1));
+                if let Some(m) = move_buttons(ui, plot_count) {
+                    plot_move = Some((pi, m));
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Title");
+                ui.text_edit_singleline(&mut plot.title);
+                ui.checkbox(&mut plot.stacked, "Stacked");
+            });
+            let series_count = plot.series.len();
+            let mut series_move = None;
+            for (si, row) in plot.series.iter_mut().enumerate() {
+                ui.group(|ui| {
+                    if let Some(m) =
+                        series_row(ui, (pi, si), row, series_count, budgets, accounts, choices)
+                    {
+                        series_move = Some((si, m));
+                    }
+                });
+            }
+            if let Some((si, m)) = series_move {
+                m.apply(&mut plot.series, si);
+            }
+            if ui.button("Add series").clicked() {
+                plot.series.push(SeriesRow::new(Measure::Flow));
+            }
+        });
+    }
+    if let Some((pi, m)) = plot_move {
+        m.apply(&mut form.plots, pi);
+    }
 }
 
-struct BalanceSeries {
-    planned: Vec<[f64; 2]>,
-    actual: Vec<[f64; 2]>,
+/// The `accounts` entries that are not one of the menu's `choices`.
+fn unlisted_entries(entries: &[String], choices: &[String]) -> Vec<String> {
+    entries
+        .iter()
+        .filter(|e| !choices.contains(e))
+        .cloned()
+        .collect()
+}
+
+/// An unlisted entry as the menu shows it: the account it is the id of, with
+/// the id, else the entry itself.
+fn entry_label(entry: &str, accounts: &[Account]) -> String {
+    match accounts.iter().find(|a| a.id == entry) {
+        Some(a) => format!("{} (id {entry})", a.name),
+        None => entry.to_owned(),
+    }
+}
+
+/// Whether a series' `budget` field (an id or a name) names `b`.
+fn is_budget(b: &Budget, field: &str) -> bool {
+    b.id == field || b.name == field
+}
+
+/// The budget combo's selected text.
+fn budget_text<'a>(budgets: &'a [Budget], field: Option<&str>) -> &'a str {
+    field
+        .and_then(|f| budgets.iter().find(|b| is_budget(b, f)))
+        .map_or("choose", |b| b.name.as_str())
+}
+
+fn series_row(
+    ui: &mut egui::Ui,
+    at: (usize, usize),
+    row: &mut SeriesRow,
+    count: usize,
+    budgets: &[Budget],
+    accounts: &[Account],
+    choices: &[String],
+) -> Option<Move> {
+    let mut action = None;
+    ui.horizontal(|ui| {
+        pick_one(
+            ui,
+            ("series_measure", at),
+            &mut row.measure,
+            &[Measure::Flow, Measure::Balance, Measure::Budget],
+            measure_name,
+        );
+        action = move_buttons(ui, count);
+    });
+    match row.measure {
+        Measure::Flow | Measure::Balance => {
+            ui.horizontal_wrapped(|ui| {
+                ui.menu_button(format!("Accounts ({})", row.accounts.len()), |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            for name in choices {
+                                let mut on = row.accounts.contains(name);
+                                if ui.checkbox(&mut on, name).changed() {
+                                    if on {
+                                        row.accounts.push(name.clone());
+                                    } else {
+                                        row.accounts.retain(|a| a != name);
+                                    }
+                                }
+                            }
+                            // Entries the menu does not list, such as account
+                            // ids: shown checked so they can be removed.
+                            for entry in unlisted_entries(&row.accounts, choices) {
+                                let mut on = true;
+                                if ui
+                                    .checkbox(&mut on, entry_label(&entry, accounts))
+                                    .changed()
+                                {
+                                    row.accounts.retain(|a| *a != entry);
+                                }
+                            }
+                        });
+                });
+                for ty in [
+                    AccountType::Asset,
+                    AccountType::Liability,
+                    AccountType::Equity,
+                    AccountType::Income,
+                    AccountType::Expense,
+                ] {
+                    let mut on = row.account_types.contains(&ty);
+                    if ui.checkbox(&mut on, form::type_name(ty)).changed() {
+                        if on {
+                            row.account_types.push(ty);
+                        } else {
+                            row.account_types.retain(|t| *t != ty);
+                        }
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Tags");
+                ui.add(egui::TextEdit::singleline(&mut row.tags).hint_text("living, food"));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Group by");
+                pick_one(
+                    ui,
+                    ("series_group", at),
+                    &mut row.group_by,
+                    &[
+                        GroupBy::None,
+                        GroupBy::Account,
+                        GroupBy::AccountType,
+                        GroupBy::Tag,
+                    ],
+                    group_name,
+                );
+                if row.group_by == GroupBy::Account {
+                    ui.label("Depth");
+                    ui.add(egui::TextEdit::singleline(&mut row.depth).desired_width(40.0));
+                }
+                if row.group_by != GroupBy::None {
+                    ui.label("Top");
+                    ui.add(egui::TextEdit::singleline(&mut row.top).desired_width(40.0));
+                }
+            });
+        }
+        Measure::Budget => {
+            ui.horizontal(|ui| {
+                ui.label("Budget");
+                let chosen = budget_text(budgets, row.budget.as_deref());
+                egui::ComboBox::from_id_salt(("series_budget", at))
+                    .selected_text(chosen)
+                    .show_ui(ui, |ui| {
+                        for b in budgets {
+                            let on = row.budget.as_deref().is_some_and(|f| is_budget(b, f));
+                            if ui.selectable_label(on, &b.name).clicked() {
+                                row.budget = Some(b.id.clone());
+                            }
+                        }
+                    });
+                ui.label("Line");
+                pick_one(
+                    ui,
+                    ("series_line", at),
+                    &mut row.line,
+                    &[BudgetLine::Pace, BudgetLine::Remaining],
+                    line_name,
+                );
+            });
+        }
+    }
+    ui.horizontal(|ui| {
+        if row.measure == Measure::Flow
+            || (row.measure == Measure::Budget && row.line == BudgetLine::Pace)
+        {
+            ui.checkbox(&mut row.cumulative, "Cumulative");
+        }
+        ui.checkbox(&mut row.negate, "Negate");
+        ui.label("Mark");
+        pick_one(
+            ui,
+            ("series_mark", at),
+            &mut row.mark,
+            &[Mark::Line, Mark::Bar],
+            mark_name,
+        );
+        ui.label("Label");
+        ui.text_edit_singleline(&mut row.label);
+    });
+    action
+}
+
+// ── plots ───────────────────────────────────────────────────────────────────
+
+const PALETTE_LIGHT: [Color32; 8] = [
+    Color32::from_rgb(0x2a, 0x78, 0xd6),
+    Color32::from_rgb(0xeb, 0x68, 0x34),
+    Color32::from_rgb(0x1b, 0xaf, 0x7a),
+    Color32::from_rgb(0xed, 0xa1, 0x00),
+    Color32::from_rgb(0xe8, 0x7b, 0xa4),
+    Color32::from_rgb(0x00, 0x83, 0x00),
+    Color32::from_rgb(0x62, 0x50, 0xd6),
+    Color32::from_rgb(0xe3, 0x49, 0x48),
+];
+const PALETTE_DARK: [Color32; 8] = [
+    Color32::from_rgb(0x39, 0x87, 0xe5),
+    Color32::from_rgb(0xd9, 0x59, 0x26),
+    Color32::from_rgb(0x19, 0x9e, 0x70),
+    Color32::from_rgb(0xc9, 0x85, 0x00),
+    Color32::from_rgb(0xd5, 0x51, 0x81),
+    Color32::from_rgb(0x00, 0x83, 0x00),
+    Color32::from_rgb(0x90, 0x85, 0xe9),
+    Color32::from_rgb(0xe6, 0x67, 0x67),
+];
+/// A plot's ninth series and later: past the categorical palette.
+const OVERFLOW: Color32 = Color32::from_rgb(0x8a, 0x8a, 0x85);
+
+/// The dataviz reference palette, in its fixed order; validated in both modes.
+fn series_color(i: usize, dark: bool) -> Color32 {
+    let palette = if dark { &PALETTE_DARK } else { &PALETTE_LIGHT };
+    palette.get(i).copied().unwrap_or(OVERFLOW)
 }
 
 fn number(raw: &str) -> f64 {
@@ -524,74 +1197,153 @@ fn number(raw: &str) -> f64 {
         .unwrap_or_default()
 }
 
-fn x(d: &BudgetDay) -> f64 {
-    f64::from(d.date.day())
+/// The last value a series has: what its legend shows.
+fn latest(values: &[Option<String>]) -> Option<&str> {
+    values.iter().rev().find_map(|v| v.as_deref())
 }
 
-fn pace_series(r: &BudgetReport) -> PaceSeries {
-    let elapsed = || r.days.iter().filter(|d| d.elapsed);
-    PaceSeries {
-        budget: r
-            .days
-            .iter()
-            .map(|d| [x(d), number(&d.budget_cumulative)])
-            .collect(),
-        spent: elapsed()
-            .map(|d| [x(d), number(&d.spent_cumulative)])
-            .collect(),
-        daily: elapsed().map(|d| [x(d), number(&d.spent)]).collect(),
-        daily_budget: number(&r.daily_budget),
+fn bucket_label(interval: Interval, period: Period, date: NaiveDate) -> String {
+    match interval {
+        Interval::Day if period == Period::Month => date.day().to_string(),
+        Interval::Day | Interval::Week => date.format("%m-%d").to_string(),
+        Interval::Month => date.format("%Y-%m").to_string(),
+        Interval::Year => date.format("%Y").to_string(),
     }
 }
 
-/// `None` when the budget has no accounts it is paid from and so no actual
-/// balance: nothing to draw.
-fn balance_series(r: &BudgetReport) -> Option<BalanceSeries> {
-    let actual: Vec<[f64; 2]> = r
-        .days
+fn period_label(run: &PanelRun) -> String {
+    match run.period {
+        Period::Month => run.from.format("%Y-%m").to_string(),
+        Period::Year => run.from.format("%Y").to_string(),
+        Period::Last12Months => {
+            format!("{} – {}", run.from.format("%Y-%m"), run.to.format("%Y-%m"))
+        }
+    }
+}
+
+/// The panel's plots stacked, sharing the x-axis: bucket `i` at x = i.
+fn draw_run(ui: &mut egui::Ui, run: &PanelRun) {
+    let labels: Vec<String> = run
+        .buckets
         .iter()
-        .filter_map(|d| d.actual_balance.as_deref().map(|a| [x(d), number(a)]))
+        .map(|b| bucket_label(run.interval, run.period, *b))
         .collect();
-    if actual.is_empty() && r.budget.balance_accounts.is_empty() {
-        return None;
+    let n = run.plots.len().max(1);
+    let dark = ui.visuals().dark_mode;
+    // Plot state is kept per panel: another panel's plots start fresh.
+    let key = run.panel.as_deref().unwrap_or(&run.name);
+    for (i, plot) in run.plots.iter().enumerate() {
+        if let Some(title) = &plot.title {
+            ui.strong(title);
+        }
+        let left = n - i;
+        let height = ((ui.available_height() - 4.0) / left as f32).max(140.0);
+        draw_plot(ui, (key, i), plot, &labels, height, dark);
     }
-    Some(BalanceSeries {
-        planned: r
-            .days
-            .iter()
-            .map(|d| [x(d), number(&d.planned_balance)])
-            .collect(),
-        actual,
-    })
 }
 
-/// `9,000 / 100,000 JPY · 3,225.81 / day · 2,548.39 over pace`. The pace
-/// part is left out until a day has elapsed, and for any month but the
-/// current one.
-fn summary(r: &BudgetReport, current: bool) -> String {
-    let last = r.days.iter().rev().find(|d| d.elapsed);
-    let spent = last.map_or("0", |d| d.spent_cumulative.as_str());
-    let mut text = format!(
-        "{} / {} {} · {} / day",
-        grouped(spent),
-        grouped(&r.budget.monthly_amount),
-        r.budget.currency,
-        grouped(&r.daily_budget),
-    );
-    if let Some(d) = last.filter(|_| current) {
-        let ahead = form::parse_amount(&d.budget_cumulative).unwrap_or_default()
-            - form::parse_amount(&d.spent_cumulative).unwrap_or_default();
-        let word = if ahead < Decimal::ZERO {
-            "over"
-        } else {
-            "under"
-        };
-        text.push_str(&format!(
-            " · {} {word} pace",
-            grouped(&ahead.abs().normalize().to_string())
-        ));
+fn draw_plot(
+    ui: &mut egui::Ui,
+    id: (&str, usize),
+    plot: &PlotRun,
+    labels: &[String],
+    height: f32,
+    dark: bool,
+) {
+    let count = labels.len();
+    let axis_labels = labels.to_vec();
+    let hover_labels = labels.to_vec();
+    let has_bars = plot.series.iter().any(|s| s.mark == Mark::Bar);
+    let mut p = Plot::new(("panel_plot", id))
+        .legend(Legend::default())
+        .allow_drag(false)
+        .allow_zoom(false)
+        .allow_scroll(false)
+        .allow_boxed_zoom(false)
+        .include_x(-0.5)
+        .include_x(count as f64 - 0.5)
+        .height(height)
+        .y_axis_min_width(72.0)
+        .link_axis("panel_x", [true, false])
+        .link_cursor("panel_x", [true, false])
+        .x_axis_formatter(move |mark, _| {
+            let x = mark.value;
+            if (x - x.round()).abs() > 1e-6 || x < 0.0 {
+                return String::new();
+            }
+            axis_labels
+                .get(x.round() as usize)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .y_axis_formatter(|mark, _| grouped(&format!("{}", mark.value.round() as i64)))
+        .label_formatter(move |pos: &HoverPosition<'_>| match pos {
+            HoverPosition::NearDataPoint {
+                plot_name,
+                position,
+                ..
+            } => Some(format!(
+                "{plot_name}\n{}: {}",
+                hover_labels
+                    .get(position.x.round().max(0.0) as usize)
+                    .cloned()
+                    .unwrap_or_default(),
+                grouped(&format!("{:.2}", position.y)),
+            )),
+            HoverPosition::Elsewhere { .. } => None,
+        });
+    // Bars read from zero; lines (a balance) are scaled to their data.
+    if has_bars {
+        p = p.include_y(0.0);
     }
-    text
+    p.show(ui, |pu| {
+        let mut bars: Vec<BarChart> = vec![];
+        for (j, s) in plot.series.iter().enumerate() {
+            let color = series_color(j, dark);
+            let name = format!(
+                "{}  {}",
+                s.label,
+                latest(&s.values).map_or("–".to_owned(), grouped)
+            );
+            match s.mark {
+                Mark::Line => {
+                    let points: Vec<[f64; 2]> = s
+                        .values
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(x, v)| v.as_deref().map(|v| [x as f64, number(v)]))
+                        .collect();
+                    let mut line = Line::new(name, PlotPoints::from(points))
+                        .color(color)
+                        .width(2.0);
+                    if s.dashed {
+                        line = line.style(LineStyle::dashed_loose());
+                    }
+                    pu.line(line);
+                }
+                Mark::Bar => {
+                    // Every bucket gets a bar, a null one at zero, so stacking lines up.
+                    let items = s
+                        .values
+                        .iter()
+                        .enumerate()
+                        .map(|(x, v)| {
+                            Bar::new(x as f64, v.as_deref().map_or(0.0, number)).width(0.7)
+                        })
+                        .collect();
+                    let mut chart = BarChart::new(name, items).color(color);
+                    if plot.stacked {
+                        let below: Vec<&BarChart> = bars.iter().collect();
+                        chart = chart.stack_on(&below);
+                    }
+                    bars.push(chart);
+                }
+            }
+        }
+        for chart in bars {
+            pu.bar_chart(chart);
+        }
+    });
 }
 
 /// `-1234567.5` → `-1,234,567.5`.
@@ -613,106 +1365,101 @@ fn grouped(raw: &str) -> String {
     }
 }
 
-fn shift_month((year, month): (i32, u32), by: i32) -> (i32, u32) {
-    let index = year * 12 + month as i32 - 1 + by;
-    (index.div_euclid(12), index.rem_euclid(12) as u32 + 1)
-}
-
-fn month_label((year, month): (i32, u32)) -> String {
-    format!("{year:04}-{month:02}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn day(
-        n: u32,
-        spent: &str,
-        spent_total: &str,
-        budget_total: &str,
-        elapsed: bool,
-        actual: Option<&str>,
-    ) -> BudgetDay {
-        BudgetDay {
-            date: chrono::NaiveDate::from_ymd_opt(2026, 10, n).unwrap(),
-            spent: spent.into(),
-            spent_cumulative: spent_total.into(),
-            budget_cumulative: budget_total.into(),
-            planned_balance: "0".into(),
-            elapsed,
-            actual_balance: actual.map(Into::into),
-        }
+    fn d(s: &str) -> chrono::NaiveDate {
+        s.parse().unwrap()
     }
 
-    fn report(days: Vec<BudgetDay>) -> BudgetReport {
-        BudgetReport {
-            budget: Budget {
-                id: "b".into(),
-                name: "生活費".into(),
-                tag: "living".into(),
-                currency: "JPY".into(),
-                monthly_amount: "100000".into(),
-                balance_accounts: vec![],
-            },
-            month: "2026-10".into(),
-            daily_budget: "3225.81".into(),
-            opening_balance: "0".into(),
-            days,
+    fn run(period: Period, interval: Interval, from: &str, to: &str) -> PanelRun {
+        PanelRun {
+            panel: Some("p".into()),
+            name: "n".into(),
+            period,
+            from: d(from),
+            to: d(to),
+            interval,
+            currency: "JPY".into(),
+            buckets: vec![d(from)],
+            plots: vec![],
         }
     }
 
     #[test]
-    fn the_actual_lines_stop_at_the_last_elapsed_day() {
-        let r = report(vec![
-            day(1, "1000", "1000", "3225.81", true, Some("-1000")),
-            day(2, "0", "1000", "6451.61", true, Some("-1000")),
-            day(3, "0", "1000", "9677.42", false, None),
-        ]);
-        let s = pace_series(&r);
-        assert_eq!(s.budget.len(), 3);
-        assert_eq!(s.spent, vec![[1.0, 1000.0], [2.0, 1000.0]]);
-        assert_eq!(s.daily, vec![[1.0, 1000.0], [2.0, 0.0]]);
-        assert!((s.daily_budget - 3225.81).abs() < 1e-9);
-        let b = balance_series(&r).expect("there are actual balances");
-        assert_eq!(b.actual.len(), 2);
-        assert_eq!(b.planned.len(), 3);
+    fn the_latest_value_is_the_last_one_there() {
+        let v = vec![Some("1".to_string()), Some("2".to_string()), None];
+        assert_eq!(latest(&v), Some("2"));
+        assert_eq!(latest(&[None]), None);
     }
 
     #[test]
-    fn no_actual_balance_means_no_balance_chart() {
-        let r = report(vec![day(1, "0", "0", "3225.81", true, None)]);
-        assert!(balance_series(&r).is_none());
-    }
-
-    #[test]
-    fn the_summary_says_where_today_stands() {
-        let r = report(vec![
-            day(1, "1000", "1000", "3225.81", true, None),
-            day(2, "8000", "9000", "6451.61", true, None),
-            day(3, "0", "9000", "9677.42", false, None),
-        ]);
+    fn buckets_and_periods_are_labelled_for_their_scale() {
         assert_eq!(
-            summary(&r, true),
-            "9,000 / 100,000 JPY · 3,225.81 / day · 2,548.39 over pace"
+            bucket_label(Interval::Day, Period::Month, d("2026-10-07")),
+            "7"
         );
-        // Another month has no "today" to be ahead or behind of.
-        assert_eq!(summary(&r, false), "9,000 / 100,000 JPY · 3,225.81 / day");
-        let r = report(vec![day(1, "0", "0", "3225.81", false, None)]);
-        assert_eq!(summary(&r, true), "0 / 100,000 JPY · 3,225.81 / day");
+        assert_eq!(
+            bucket_label(Interval::Day, Period::Year, d("2026-10-07")),
+            "10-07"
+        );
+        assert_eq!(
+            bucket_label(Interval::Week, Period::Month, d("2026-10-05")),
+            "10-05"
+        );
+        assert_eq!(
+            bucket_label(Interval::Month, Period::Last12Months, d("2026-10-01")),
+            "2026-10"
+        );
+        assert_eq!(
+            bucket_label(Interval::Year, Period::Year, d("2026-01-01")),
+            "2026"
+        );
+        assert_eq!(
+            period_label(&run(
+                Period::Month,
+                Interval::Day,
+                "2026-10-01",
+                "2026-10-31"
+            )),
+            "2026-10"
+        );
+        assert_eq!(
+            period_label(&run(
+                Period::Year,
+                Interval::Month,
+                "2026-01-01",
+                "2026-12-31"
+            )),
+            "2026"
+        );
+        assert_eq!(
+            period_label(&run(
+                Period::Last12Months,
+                Interval::Month,
+                "2025-11-01",
+                "2026-10-31"
+            )),
+            "2025-11 – 2026-10"
+        );
     }
 
     #[test]
-    fn thousands_are_grouped_and_months_roll_over() {
+    fn colours_follow_the_order_and_go_grey_past_eight() {
+        assert_eq!(series_color(0, false), Color32::from_rgb(0x2a, 0x78, 0xd6));
+        assert_eq!(series_color(1, true), Color32::from_rgb(0xd9, 0x59, 0x26));
+        assert_eq!(series_color(7, false), Color32::from_rgb(0xe3, 0x49, 0x48));
+        assert_eq!(series_color(8, true), Color32::from_rgb(0x8a, 0x8a, 0x85));
+    }
+
+    #[test]
+    fn thousands_are_grouped() {
         assert_eq!(grouped("-1234567.5"), "-1,234,567.5");
         assert_eq!(grouped("999"), "999");
-        assert_eq!(shift_month((2026, 12), 1), (2027, 1));
-        assert_eq!(shift_month((2026, 1), -1), (2025, 12));
-        assert_eq!(month_label((2026, 3)), "2026-03");
     }
 
-    #[test]
-    fn a_load_overtaken_by_a_budget_change_is_dropped() {
+    fn view() -> (tokio::runtime::Runtime, ChartsView) {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
@@ -721,15 +1468,36 @@ mod tests {
             std::env::temp_dir().join("charts-test"),
         );
         let client = Arc::new(LedgerClient::new("test", "0.0.0", endpoint));
-        let mut view = ChartsView::new(runtime.handle().clone(), client, Arc::new(|| {}));
-        // A load is in flight, then the user picks another budget.
+        let view = ChartsView::new(runtime.handle().clone(), client, Arc::new(|| {}));
+        (runtime, view)
+    }
+
+    fn panel(id: &str, name: &str) -> Panel {
+        let at = chrono::DateTime::parse_from_rfc3339("2026-10-17T00:00:00+09:00").unwrap();
+        Panel {
+            id: id.into(),
+            name: name.into(),
+            period: Period::Month,
+            interval: None,
+            currency: None,
+            created_at: at,
+            updated_at: at,
+            plots: vec![],
+        }
+    }
+
+    #[test]
+    fn a_load_overtaken_by_a_panel_change_is_dropped() {
+        let (_rt, mut view) = view();
         let in_flight = view.generation.next();
         view.selected = Some("other".into());
         view.reload_now();
         let loaded = Loaded {
+            panels: vec![panel("p1", "A")],
             budgets: vec![],
             accounts: vec![],
-            report: Some(report(vec![])),
+            shown: Some("p1".into()),
+            run: None,
         };
         view.replies
             .0
@@ -737,15 +1505,182 @@ mod tests {
             .unwrap();
         view.drain_replies();
         assert_eq!(view.selected.as_deref(), Some("other"));
-        assert!(view.report.is_none());
     }
 
     #[test]
-    fn stale_replies_are_ignored() {
-        let mut generation = Generation::default();
-        let old = generation.next();
-        let new = generation.next();
-        assert!(!generation.is_current(old));
-        assert!(generation.is_current(new));
+    fn a_panel_named_after_a_write_is_picked() {
+        let panels = vec![panel("p1", "A"), panel("p2", "生活費 pace")];
+        assert_eq!(
+            pick(&panels, None, Some("生活費 pace")),
+            Some("p2".to_string())
+        );
+        assert_eq!(pick(&panels, Some("p1"), None), Some("p1".to_string()));
+        assert_eq!(pick(&panels, Some("gone"), None), Some("p1".to_string()));
+        let mut unsorted = vec![panel("p9", "Zed"), panel("p1", "Alpha")];
+        sort_by_name(&mut unsorted);
+        assert_eq!(pick(&unsorted, None, None), Some("p1".to_string()));
+        assert_eq!(pick(&[], None, None), None);
+    }
+
+    #[test]
+    fn a_saved_or_deleted_panel_is_followed() {
+        let (_rt, mut view) = view();
+        view.selected = Some("p1".into());
+        view.replies
+            .0
+            .send(Reply::Written(
+                Source::Panel,
+                Some("New".into()),
+                Ok("created panel".into()),
+            ))
+            .unwrap();
+        view.drain_replies();
+        assert_eq!(view.select_name.as_deref(), Some("New"));
+        view.replies
+            .0
+            .send(Reply::Deleted(Ok("deleted panel p1".into())))
+            .unwrap();
+        view.drain_replies();
+        assert_eq!(view.selected, None);
+    }
+
+    #[test]
+    fn a_preview_hides_the_no_panels_placeholder() {
+        assert!(shows_placeholder(true, false, false));
+        assert!(!shows_placeholder(true, false, true));
+        assert!(!shows_placeholder(false, false, false));
+    }
+
+    #[test]
+    fn a_deleted_panel_ends_the_preview_and_closes_its_editor() {
+        let (_rt, mut view) = view();
+        view.confirm_delete = Some(panel("p1", "A"));
+        view.editor = Some(PanelForm::from_definition(
+            Some("p1".into()),
+            &panel("p1", "A").definition(),
+        ));
+        view.previewing = true;
+        view.replies
+            .0
+            .send(Reply::Deleted(Ok("deleted panel p1".into())))
+            .unwrap();
+        view.drain_replies();
+        assert!(!view.previewing);
+        assert!(view.editor.is_none());
+    }
+
+    #[test]
+    fn a_write_closes_only_its_own_form() {
+        let (_rt, mut view) = view();
+        let send = |view: &ChartsView, source| {
+            view.replies
+                .0
+                .send(Reply::Written(source, None, Ok("ok".into())))
+                .unwrap();
+        };
+        let open = |view: &mut ChartsView| {
+            view.budget_form = Some(BudgetForm::new("JPY"));
+            view.editor = Some(PanelForm::new());
+            view.previewing = true;
+        };
+        open(&mut view);
+        send(&view, Source::Budget);
+        view.drain_replies();
+        assert!(view.budget_form.is_none());
+        assert!(view.editor.is_some() && view.previewing);
+
+        open(&mut view);
+        send(&view, Source::Panel);
+        view.drain_replies();
+        assert!(view.budget_form.is_some());
+        assert!(view.editor.is_none() && !view.previewing);
+    }
+
+    #[test]
+    fn a_write_that_selects_a_panel_returns_to_the_current_period() {
+        let (_rt, mut view) = view();
+        view.offset = -3;
+        view.replies
+            .0
+            .send(Reply::Written(Source::Panel, None, Ok("ok".into())))
+            .unwrap();
+        view.drain_replies();
+        assert_eq!(view.offset, -3);
+        view.replies
+            .0
+            .send(Reply::Written(
+                Source::Panel,
+                Some("New".into()),
+                Ok("ok".into()),
+            ))
+            .unwrap();
+        view.drain_replies();
+        assert_eq!(view.offset, 0);
+    }
+
+    #[test]
+    fn a_delete_is_in_flight_until_it_is_answered() {
+        let (_rt, mut view) = view();
+        view.deleting = true;
+        view.replies
+            .0
+            .send(Reply::Deleted(Err("nope".into())))
+            .unwrap();
+        view.drain_replies();
+        assert!(!view.deleting);
+        view.deleting = true;
+        view.replies
+            .0
+            .send(Reply::Deleted(Ok("deleted".into())))
+            .unwrap();
+        view.drain_replies();
+        assert!(!view.deleting);
+    }
+
+    fn account(id: &str, name: &str) -> Account {
+        Account {
+            id: id.into(),
+            name: name.into(),
+            account_type: AccountType::Asset,
+            currencies: vec![],
+            opened_at: d("2026-01-01"),
+            closed_at: None,
+            default_tags: vec![],
+            description: None,
+        }
+    }
+
+    fn budget(id: &str, name: &str) -> Budget {
+        Budget {
+            id: id.into(),
+            name: name.into(),
+            tag: "t".into(),
+            currency: "JPY".into(),
+            monthly_amount: "1".into(),
+            balance_accounts: vec![],
+        }
+    }
+
+    #[test]
+    fn an_account_filter_stored_as_an_id_is_listed_with_its_name() {
+        let accounts = [account("4h6j2k9", "Assets:Bank")];
+        let choices = form::account_choices(&accounts);
+        let entries = vec!["Assets".to_string(), "4h6j2k9".into(), "gone".into()];
+        let unlisted = unlisted_entries(&entries, &choices);
+        assert_eq!(unlisted, ["4h6j2k9", "gone"]);
+        assert_eq!(
+            entry_label("4h6j2k9", &accounts),
+            "Assets:Bank (id 4h6j2k9)"
+        );
+        assert_eq!(entry_label("gone", &accounts), "gone");
+    }
+
+    #[test]
+    fn the_budget_combo_matches_an_id_or_a_name() {
+        let budgets = [budget("b1", "living"), budget("b2", "play")];
+        assert_eq!(budget_text(&budgets, Some("b2")), "play");
+        assert_eq!(budget_text(&budgets, Some("living")), "living");
+        assert_eq!(budget_text(&budgets, Some("nope")), "choose");
+        assert_eq!(budget_text(&budgets, None), "choose");
     }
 }

@@ -295,16 +295,26 @@ fn a_cross_currency_posting_balances_through_its_inline_price() {
 }
 
 #[test]
-fn budget_report_prints_a_hand_written_budgets_month() {
+fn panel_run_prints_a_hand_written_panels_month() {
     let dir = seeded();
     let root = dir.path();
-    // No CLI `budget add` yet: a budget written by hand, naming its account by name only.
+    // A budget and a panel written by hand, naming accounts by name only.
     std::fs::create_dir_all(root.join("budgets")).unwrap();
     std::fs::write(
         root.join("budgets/bud0001.toml"),
         "id = \"bud0001\"\nname = \"living\"\ntag = \"grocery\"\ncurrency = \"JPY\"\n\
          monthly_amount = \"31000\"\ncreated_at = \"2026-05-01T00:00:00+09:00\"\n\
-         updated_at = \"2026-05-01T00:00:00+09:00\"\n\n[[balance_accounts]]\naccount_name = \"Assets:Cash\"\n",
+         updated_at = \"2026-05-01T00:00:00+09:00\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("panels")).unwrap();
+    std::fs::write(
+        root.join("panels/pan0001.toml"),
+        "id = \"pan0001\"\nname = \"Living pace\"\nperiod = \"month\"\n\
+         created_at = \"2026-05-01T00:00:00+09:00\"\nupdated_at = \"2026-05-01T00:00:00+09:00\"\n\n\
+         [[plots]]\ntitle = \"Cumulative\"\n\n\
+         [[plots.series]]\nmeasure = \"flow\"\ntags = [\"grocery\"]\naccount_types = [\"Expense\"]\ncumulative = true\nlabel = \"Spent\"\n\n\
+         [[plots.series]]\nmeasure = \"budget\"\nbudget = \"living\"\ncumulative = true\nlabel = \"Budget\"\n",
     )
     .unwrap();
     ok(
@@ -325,24 +335,49 @@ fn budget_report_prints_a_hand_written_budgets_month() {
         ],
     );
 
-    let out = ok(root, &["budget", "report", "living", "--month", "2026-05"]);
-    assert!(out.contains("1000 / day"), "got: {out}");
+    let list = ok(root, &["panel", "list"]);
+    assert!(
+        list.contains("pan0001  Living pace  (month)"),
+        "got: {list}"
+    );
+
+    let out = ok(
+        root,
+        &["panel", "run", "Living pace", "--anchor", "2026-05-10"],
+    );
+    assert!(
+        out.starts_with("Living pace · 2026-05-01 – 2026-05-31 · JPY"),
+        "got: {out}"
+    );
+    assert!(out.contains("== Cumulative =="), "got: {out}");
     let line = out
         .lines()
         .find(|l| l.starts_with("2026-05-22"))
         .expect("a row per day");
     let cols: Vec<&str> = line.split_whitespace().collect();
-    assert_eq!(
-        cols,
-        ["2026-05-22", "500", "500", "22000", "-22000", "-1700"],
-        "got: {line}"
-    );
+    assert_eq!(cols, ["2026-05-22", "500", "22000"], "got: {line}");
     assert_eq!(
         out.lines().filter(|l| l.starts_with("2026-05-")).count(),
         31
     );
 
-    let err = run(root, &["budget", "report", "nope"]);
+    let prev = ok(
+        root,
+        &[
+            "panel",
+            "run",
+            "pan0001",
+            "--anchor",
+            "2026-06-10",
+            "--offset",
+            "-1",
+        ],
+    );
+    assert!(prev.contains("2026-05-01 – 2026-05-31"), "got: {prev}");
+
+    let err = run(root, &["panel", "run", "nope"]);
     assert!(!err.status.success());
-    assert!(String::from_utf8_lossy(&err.stderr).contains("no budget nope"));
+    assert!(String::from_utf8_lossy(&err.stderr).contains("no panel nope"));
+    let gone = run(root, &["budget", "report", "living"]);
+    assert!(!gone.status.success(), "`budget report` is gone");
 }

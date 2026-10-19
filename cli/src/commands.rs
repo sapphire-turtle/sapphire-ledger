@@ -11,9 +11,9 @@ use std::path::Path;
 
 use anyhow::{Context as _, bail};
 use chrono::NaiveDate;
-use sapphire_ledger_core::{AccountType, Balance, TransactionStatus, ops, report};
+use sapphire_ledger_core::{AccountType, Balance, TransactionStatus, ops};
 
-use crate::cli::{AccountCommand, AssertionCommand, BudgetCommand, PriceCommand, TxCommand};
+use crate::cli::{AccountCommand, AssertionCommand, PanelCommand, PriceCommand, TxCommand};
 use crate::posting;
 
 pub fn account(command: AccountCommand, root: &Path) -> anyhow::Result<()> {
@@ -266,47 +266,72 @@ fn parse_balance(spec: &str) -> anyhow::Result<Balance> {
     })
 }
 
-pub fn budget(command: BudgetCommand, root: &Path) -> anyhow::Result<()> {
-    let BudgetCommand::Report { budget, month } = command;
-    let (year, month) = match month.as_deref() {
-        Some(raw) => report::parse_month(raw)?,
-        None => {
-            let t = today();
-            (chrono::Datelike::year(&t), chrono::Datelike::month(&t))
-        }
-    };
+pub fn panel(command: PanelCommand, root: &Path) -> anyhow::Result<()> {
     let workspace = sapphire_ledger_core::load_workspace(root)?;
-    let found = workspace
-        .budgets
-        .iter()
-        .find(|b| b.id == budget)
-        .or_else(|| workspace.budgets.iter().find(|b| b.name == budget))
-        .with_context(|| format!("no budget {budget}"))?;
-    let r = report::budget_report(&workspace, found, year, month, today())?;
-    let a = |d: rust_decimal::Decimal| report::round_amount(d).to_string();
-    println!(
-        "{} {year:04}-{month:02}: {} {} / month, {} / day, opening balance {}",
-        found.name,
-        a(found.monthly_amount),
-        found.currency,
-        a(r.daily_budget),
-        a(r.opening_balance),
-    );
-    println!(
-        "{:<10}  {:>12}  {:>12}  {:>12}  {:>12}  {:>12}",
-        "date", "spent", "spent total", "budget total", "planned", "actual"
-    );
-    for d in &r.days {
-        let actual = d.actual_balance.map(a).unwrap_or_else(|| "-".into());
-        println!(
-            "{}  {:>12}  {:>12}  {:>12}  {:>12}  {:>12}",
-            d.date,
-            a(d.spent),
-            a(d.spent_cumulative),
-            a(d.budget_cumulative),
-            a(d.planned_balance),
-            actual,
-        );
+    match command {
+        PanelCommand::List => {
+            if workspace.panels.is_empty() {
+                println!("no panels");
+            }
+            for p in &workspace.panels {
+                let period = serde_json::to_value(p.period)?;
+                println!(
+                    "{}  {}  ({})",
+                    p.id,
+                    p.name,
+                    period.as_str().unwrap_or_default()
+                );
+            }
+        }
+        PanelCommand::Run {
+            panel,
+            anchor,
+            offset,
+        } => {
+            let found = sapphire_ledger_core::panel::find_panel(&workspace.panels, &panel)?;
+            let anchor = match anchor.as_deref() {
+                Some(raw) => parse_date(raw)?,
+                None => today(),
+            };
+            let run = sapphire_ledger_core::panel::run_panel(
+                &workspace,
+                &found.definition(),
+                anchor,
+                offset.unwrap_or(0),
+                today(),
+            )?;
+            println!(
+                "{} · {} – {} · {}",
+                run.name, run.from, run.to, run.currency
+            );
+            for (i, plot) in run.plots.iter().enumerate() {
+                println!();
+                println!(
+                    "== {} ==",
+                    plot.title
+                        .clone()
+                        .unwrap_or_else(|| format!("plot {}", i + 1))
+                );
+                let widths: Vec<usize> = plot
+                    .series
+                    .iter()
+                    .map(|s| s.label.chars().count().max(12))
+                    .collect();
+                let mut header = format!("{:<10}", "date");
+                for (s, w) in plot.series.iter().zip(&widths) {
+                    header.push_str(&format!("  {:>w$}", s.label, w = w));
+                }
+                println!("{header}");
+                for (b, date) in run.buckets.iter().enumerate() {
+                    let mut row = format!("{date}");
+                    for (s, w) in plot.series.iter().zip(&widths) {
+                        let v = s.values[b].map_or_else(|| "-".to_owned(), |d| d.to_string());
+                        row.push_str(&format!("  {v:>w$}", w = w));
+                    }
+                    println!("{row}");
+                }
+            }
+        }
     }
     Ok(())
 }

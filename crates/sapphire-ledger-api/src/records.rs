@@ -9,7 +9,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Which side of the books an account is on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum AccountType {
     Asset,
     Liability,
@@ -163,36 +163,4 @@ pub struct Budget {
     /// Accounts whose balance the report shows against the plan.
     #[serde(default)]
     pub balance_accounts: Vec<AccountRef>,
-}
-
-/// One day of a [`BudgetReport`]. Amounts are decimals as strings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BudgetDay {
-    pub date: NaiveDate,
-    /// Spent on this day.
-    pub spent: String,
-    /// Spent from the month's start through this day.
-    pub spent_cumulative: String,
-    /// What the budget allows from the month's start through this day.
-    pub budget_cumulative: String,
-    /// The balance if spending followed the budget exactly.
-    pub planned_balance: String,
-    /// Whether the day has passed.
-    pub elapsed: bool,
-    /// The balance accounts' actual balance, for a day that has passed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub actual_balance: Option<String>,
-}
-
-/// One budget's month day by day, as `budget_report` answers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BudgetReport {
-    pub budget: Budget,
-    /// `YYYY-MM`.
-    pub month: String,
-    /// What the budget allows per day.
-    pub daily_budget: String,
-    /// The balance accounts' balance before the month starts.
-    pub opening_balance: String,
-    pub days: Vec<BudgetDay>,
 }
