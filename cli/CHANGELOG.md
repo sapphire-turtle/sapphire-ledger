@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.1.0...v0.2.0) - 2026-10-20
+
+### Added
+
+- let cargo binstall install the release binaries
+- *(cli)* [**breaking**] panel list and panel run in place of budget report
+- *(mcp)* query_series and panels as query presets, in place of budget_report
+- *(api)* series query and panel types, and the panel templates
+- *(cli)* budget report
+- *(mcp)* budget tools and update_account for agents
+- *(api)* [**breaking**] default tags and budgets in the ledger's API, version 2
+- *(core)* copy accounts' default tags into new transactions
+
+### Fixed
+
+- budget edits carry template panels along; budget opening counts sub-accounts
+
+### Other
+
+- note that any MCP client works, not only sapphire-agent
+- Merge pull request #46 from sapphire-turtle/feat/binstall
+- the series query, panels and the Charts screen
+
 ## [0.1.0](https://github.com/sapphire-turtle/sapphire-ledger/releases/tag/v0.1.0) - 2026-10-15
 
 ### Added
