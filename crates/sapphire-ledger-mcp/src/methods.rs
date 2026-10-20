@@ -17,9 +17,9 @@ use anyhow::Context as _;
 use sapphire_framework::ipc::{RequestCtx, Router, RpcError};
 use sapphire_ledger_api::{
     self as api, AddAccountParams, AddAssertionParams, AddBudgetParams, AddPanelParams,
-    AddPriceParams, AddTransactionParams, DeletePanelParams, EmptyParams, GetTransactionParams,
-    PostingHit, PostingParam, QueryPostingsParams, QueryPricesParams, QuerySeriesParams,
-    RunPanelParams, UpdateAccountParams, UpdateBudgetParams, UpdatePanelParams,
+    AddPriceParams, AddTransactionParams, AddTransactionsParams, DeletePanelParams, EmptyParams,
+    GetTransactionParams, PostingHit, PostingParam, QueryPostingsParams, QueryPricesParams,
+    QuerySeriesParams, RunPanelParams, UpdateAccountParams, UpdateBudgetParams, UpdatePanelParams,
 };
 use sapphire_ledger_core::{LedgerState, ops, panel, series};
 use serde::de::DeserializeOwned;
@@ -82,6 +82,12 @@ pub fn register(router: Router, source: StateSource) -> Router {
         api::ADD_TRANSACTION,
         &source,
         LedgerMethods::add_transaction,
+    );
+    let router = route(
+        router,
+        api::ADD_TRANSACTIONS,
+        &source,
+        LedgerMethods::add_transactions,
     );
     let router = route(
         router,
@@ -353,6 +359,27 @@ fn build_posting(
     })
 }
 
+/// One of `add_transactions`' transactions, parsed and its accounts classified.
+fn new_transaction(
+    p: AddTransactionParams,
+    accounts: &[sapphire_ledger_core::Account],
+) -> anyhow::Result<ops::NewTransaction> {
+    Ok(ops::NewTransaction {
+        date: parse_date(&p.date)?,
+        narration: p.narration,
+        payee: p.payee,
+        tags: p.tags,
+        status: p.status.as_deref().map(parse_status).transpose()?,
+        postings: p
+            .postings
+            .into_iter()
+            .map(|param| build_posting(param, accounts))
+            .collect::<anyhow::Result<Vec<_>>>()?,
+        comment: p.comment,
+        apply_default_tags: p.apply_default_tags,
+    })
+}
+
 // ── methods ─────────────────────────────────────────────────────────────────────
 
 impl LedgerMethods {
@@ -556,6 +583,44 @@ impl LedgerMethods {
                 &dest,
                 reload_err,
             ))
+        })()
+        .map_err(render_error)
+    }
+
+    fn add_transactions(&self, p: AddTransactionsParams) -> Result<String, String> {
+        (|| -> anyhow::Result<String> {
+            let mut guard = self.lock_state();
+            // See add_transaction: classify references against fresh accounts.
+            guard.reload()?;
+            let batch = {
+                let accounts = &guard.workspace().accounts;
+                p.transactions
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, t)| {
+                        new_transaction(t, accounts)
+                            .with_context(|| format!("#{} in the batch", index + 1))
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?
+            };
+            let created = ops::create_transactions(guard.root(), batch)?;
+            let reload_err = guard.reload().err();
+            drop(guard);
+            let paths: Vec<PathBuf> = created.iter().map(|(_, dest)| dest.clone()).collect();
+            self.notify_write(&paths);
+
+            let mut msg = format!("created {} transactions", created.len());
+            for (id, dest) in &created {
+                msg.push_str(&format!("\n{id}: {}", dest.display()));
+            }
+            if let Some(e) = reload_err {
+                let e = render_error(e.into());
+                msg.push_str(&format!(
+                    "\nWARNING: the records were written, but the ledger snapshot could not \
+                     be reloaded afterwards: {e}"
+                ));
+            }
+            Ok(msg)
         })()
         .map_err(render_error)
     }
@@ -1073,6 +1138,98 @@ postings:
 
         let issues = server.validate_workspace(EmptyParams {}).expect("validate");
         assert_eq!(issues.trim(), "[]", "got: {issues}");
+    }
+
+    fn transaction_param(narration: &str, amount: &str) -> AddTransactionParams {
+        AddTransactionParams {
+            apply_default_tags: true,
+            date: "2026-05-21".into(),
+            narration: narration.into(),
+            payee: None,
+            tags: vec![],
+            status: None,
+            postings: vec![
+                posting_param("Expenses:Food", amount),
+                posting_param("Assets:Cash:JPY", "-1200"),
+            ],
+            comment: None,
+        }
+    }
+
+    #[test]
+    fn add_transactions_records_them_all_and_notifies_once() {
+        let (_dir, server, seen) = test_server_with_observer();
+        add_account(&server, "Expenses:Food", "Expense");
+        add_account(&server, "Assets:Cash:JPY", "Asset");
+        seen.lock().unwrap().clear();
+
+        let created = server
+            .add_transactions(AddTransactionsParams {
+                transactions: vec![
+                    transaction_param("one", "1200"),
+                    transaction_param("two", "1200"),
+                    transaction_param("three", "1200"),
+                ],
+            })
+            .expect("add_transactions");
+        assert!(
+            created.starts_with("created 3 transactions"),
+            "got: {created}"
+        );
+        assert_eq!(seen.lock().unwrap().len(), 3, "one batch, every path");
+
+        let hits = server
+            .query_postings(QueryPostingsParams {
+                account: Some("Expenses:Food".into()),
+                currency: None,
+                date_from: None,
+                date_to: None,
+            })
+            .expect("query");
+        for narration in ["one", "two", "three"] {
+            assert!(hits.contains(narration), "missing {narration}: {hits}");
+        }
+        let issues = server.validate_workspace(EmptyParams {}).expect("validate");
+        assert_eq!(issues.trim(), "[]", "got: {issues}");
+    }
+
+    #[test]
+    fn add_transactions_writes_none_when_one_is_bad() {
+        let (_dir, server) = test_server();
+        add_account(&server, "Expenses:Food", "Expense");
+        add_account(&server, "Assets:Cash:JPY", "Asset");
+
+        let mut bad_date = transaction_param("bad date", "1200");
+        bad_date.date = "2026-13-01".into();
+        let err = server
+            .add_transactions(AddTransactionsParams {
+                transactions: vec![transaction_param("fine", "1200"), bad_date],
+            })
+            .expect_err("a bad date refuses the batch");
+        assert!(err.contains("#2 in the batch"), "got: {err}");
+        assert!(err.contains("2026-13-01"), "got: {err}");
+
+        let err = server
+            .add_transactions(AddTransactionsParams {
+                transactions: vec![
+                    transaction_param("fine", "1200"),
+                    transaction_param("fine", "1200"),
+                    transaction_param("unbalanced", "999"),
+                ],
+            })
+            .expect_err("an unbalanced one refuses the batch");
+        assert!(err.contains("#3 in the batch"), "got: {err}");
+        assert!(err.contains("does not balance"), "got: {err}");
+
+        let hits = server
+            .query_postings(QueryPostingsParams {
+                account: None,
+                currency: None,
+                date_from: None,
+                date_to: None,
+            })
+            .expect("query");
+        assert_eq!(hits.trim(), "[]", "nothing written: {hits}");
     }
 
     #[test]
