@@ -570,3 +570,69 @@ fn update_account_refuses_an_unknown_account() {
     let err = ops::update_account(dir.path(), "Expenses:Nope", vec![]).unwrap_err();
     assert!(err.to_string().contains("Expenses:Nope"), "got: {err}");
 }
+
+fn new_transaction(narration: &str, amount: &str) -> ops::NewTransaction {
+    ops::NewTransaction {
+        date: "2026-05-21".parse().unwrap(),
+        narration: narration.into(),
+        payee: None,
+        tags: vec![],
+        status: None,
+        postings: vec![
+            posting_by_name("Expenses:Food", amount),
+            posting_by_name("Assets:Cash:JPY", "-1200"),
+        ],
+        comment: None,
+        apply_default_tags: true,
+    }
+}
+
+fn transaction_files(root: &std::path::Path) -> usize {
+    sapphire_ledger_core::walk_markdown_files(&root.join("transactions"))
+        .expect("walk")
+        .len()
+}
+
+#[test]
+fn create_transactions_writes_each_under_its_own_id() {
+    let dir = ws();
+    add_account(dir.path(), "Expenses:Food", AccountType::Expense);
+    add_account(dir.path(), "Assets:Cash:JPY", AccountType::Asset);
+
+    // Minted in one decisecond: the time-ordered id alone would collide.
+    let batch = (0..5)
+        .map(|i| new_transaction(&format!("row {i}"), "1200"))
+        .collect();
+    let created = ops::create_transactions(dir.path(), batch).expect("create");
+
+    assert_eq!(created.len(), 5);
+    let ids: std::collections::HashSet<&str> = created.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids.len(), 5, "ids must be distinct: {created:?}");
+    for (i, (id, dest)) in created.iter().enumerate() {
+        let written: Transaction = load_markdown(dest).expect("read back");
+        assert_eq!(&written.id, id);
+        assert_eq!(written.narration, format!("row {i}"), "kept in order");
+    }
+    assert_eq!(transaction_files(dir.path()), 5);
+}
+
+#[test]
+fn create_transactions_writes_nothing_when_one_is_refused() {
+    let dir = ws();
+    add_account(dir.path(), "Expenses:Food", AccountType::Expense);
+    add_account(dir.path(), "Assets:Cash:JPY", AccountType::Asset);
+
+    let batch = vec![
+        new_transaction("fine", "1200"),
+        new_transaction("unbalanced", "999"),
+        new_transaction("fine too", "1200"),
+    ];
+    let err = ops::create_transactions(dir.path(), batch).expect_err("must refuse");
+
+    assert_eq!(err.to_string(), "#2 in the batch");
+    let reason = std::error::Error::source(&err)
+        .expect("the reason")
+        .to_string();
+    assert!(reason.contains("does not balance"), "got: {reason}");
+    assert_eq!(transaction_files(dir.path()), 0, "all or none");
+}

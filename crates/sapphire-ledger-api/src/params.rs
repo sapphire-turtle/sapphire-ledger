@@ -94,6 +94,13 @@ pub struct AddTransactionParams {
     pub apply_default_tags: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AddTransactionsParams {
+    /// The transactions to record, each as `add_transaction` takes it. All
+    /// are checked before any is written: one that fails refuses them all.
+    pub transactions: Vec<AddTransactionParams>,
+}
+
 /// `add_transaction` applies default tags unless told otherwise.
 fn applies() -> bool {
     true
