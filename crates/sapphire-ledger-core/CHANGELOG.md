@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-core-v0.1.0...sapphire-ledger-core-v0.2.0) - 2026-10-20
+
+### Added
+
+- *(cli)* [**breaking**] panel list and panel run in place of budget report
+- *(core)* panels — saved charts of series queries, with their ops and checks
+- *(core)* a generic series query — flow, balance and budget lines
+- *(core)* a budget's month as a day-by-day report
+- *(core)* budget records, their writes and their validation
+- *(core)* update an account's default tags
+- *(core)* copy accounts' default tags into new transactions
+
+### Fixed
+
+- budget edits carry template panels along; budget opening counts sub-accounts
+- final review — balance plot scale, aligned axes, month overflow, ops order
+
 ## [0.1.0](https://github.com/sapphire-turtle/sapphire-ledger/releases/tag/sapphire-ledger-core-v0.1.0) - 2026-10-15
 
 ### Added
