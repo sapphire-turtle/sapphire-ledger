@@ -4529,6 +4529,7 @@ dependencies = [
  "sapphire-framework-backend",
  "sapphire-framework-gui",
  "sapphire-framework-ipc",
+ "sapphire-framework-keys",
  "sapphire-framework-mcp",
  "sapphire-framework-server",
  "sapphire-framework-workspace",
@@ -4832,6 +4833,8 @@ name = "sapphire-ledger"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "axum",
  "chrono",
  "clap",
  "rust_decimal",
@@ -4840,10 +4843,12 @@ dependencies = [
  "sapphire-ledger-core",
  "sapphire-ledger-mcp",
  "serde",
+ "serde_html_form",
  "serde_json",
  "tempfile",
  "tokio",
  "toml",
+ "tower",
  "tracing",
 ]
 
@@ -5073,6 +5078,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "serde_html_form"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2f2d7ff8a2140333718bb329f5c40fc5f0865b84c426183ce14c97d2ab8154f"
+dependencies = [
+ "form_urlencoded",
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde_core",
 ]
 
 [[package]]

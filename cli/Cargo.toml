@@ -39,9 +39,15 @@ serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "time"] }
 toml.workspace = true
 tracing.workspace = true
+axum = "0.8"
+serde_html_form = "0.2"
 
 [dev-dependencies]
+sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp", "keys"] }
+async-trait = "0.1"
 tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
+tower = { version = "0.5", features = ["util"] }
 
 # `cargo binstall sapphire-ledger` downloads the release file instead of building it, following
 # sapphire-framework's ci/README.md#conventions: the files are bare binaries named

@@ -15,5 +15,5 @@ pub mod methods;
 pub mod tools;
 mod wire;
 
-pub use methods::{LedgerMethods, StateSource, WriteObserver, register};
+pub use methods::{LedgerMethods, StateSource, WriteObserver, register, run_query_series};
 pub use tools::{LedgerTools, service};

@@ -8,6 +8,7 @@
 
 pub mod cli;
 pub mod commands;
+pub mod http;
 pub mod posting;
 pub mod serve;
 pub mod watch;

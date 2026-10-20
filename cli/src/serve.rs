@@ -11,6 +11,9 @@
 //! - **the ledger's methods** (`sapphire-ledger.*`), which its MCP tools call:
 //!   the framework serves those tools on stdio (`sapphire-ledger mcp`) and, when
 //!   `server.toml` turns it on, at `/mcp` on the server's HTTP listener.
+//! - **the ledger's HTTP routes** ([`crate::http`]): `/api/series` for
+//!   Grafana, on the same listener as `/mcp` and behind the same token, served
+//!   whatever `[mcp] http` says.
 //! - **the duplicate-id watch** ([`crate::watch`]) over that same workspace.
 
 use std::io;
@@ -52,8 +55,11 @@ pub fn build_oneshot() -> AppServer {
 pub fn build() -> AppServer {
     let server = build_oneshot().http_listen(default_http_addr());
     let ledger = Arc::new(CurrentLedger::new(Arc::clone(server.host())));
+    let source: sapphire_ledger_mcp::StateSource = Arc::new(move || ledger.get());
+    let routes = crate::http::routes(Arc::clone(&source));
     server
-        .extend(move |router| sapphire_ledger_mcp::register(router, Arc::new(move || ledger.get())))
+        .extend(move |router| sapphire_ledger_mcp::register(router, source))
+        .http(routes)
 }
 
 fn default_http_addr() -> SocketAddr {
