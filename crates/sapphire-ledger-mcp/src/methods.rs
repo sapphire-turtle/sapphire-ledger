@@ -229,6 +229,27 @@ impl LedgerMethods {
     }
 }
 
+/// Run a series query given on the wire against `ws`, as of `today`: what the
+/// `query_series` method answers, for any other caller (the HTTP route).
+pub fn run_query_series(
+    ws: &sapphire_ledger_core::Workspace,
+    p: &QuerySeriesParams,
+    today: chrono::NaiveDate,
+) -> anyhow::Result<api::SeriesResult> {
+    let request = series::SeriesRequest {
+        from: parse_date(&p.from)?,
+        to: parse_date(&p.to)?,
+        interval: wire::convert(&p.interval)?,
+        currency: p.currency.clone(),
+        series: p
+            .series
+            .iter()
+            .map(wire::series_query)
+            .collect::<anyhow::Result<_>>()?,
+    };
+    wire::series_result(series::query_series(ws, &request, today)?)
+}
+
 fn parse_date(raw: &str) -> anyhow::Result<chrono::NaiveDate> {
     raw.parse::<chrono::NaiveDate>()
         .with_context(|| format!("not a YYYY-MM-DD date: {raw}"))
@@ -752,21 +773,10 @@ impl LedgerMethods {
 
     fn query_series(&self, p: QuerySeriesParams) -> Result<String, String> {
         (|| -> anyhow::Result<String> {
-            let request = series::SeriesRequest {
-                from: parse_date(&p.from)?,
-                to: parse_date(&p.to)?,
-                interval: wire::convert(&p.interval)?,
-                currency: p.currency,
-                series: p
-                    .series
-                    .iter()
-                    .map(wire::series_query)
-                    .collect::<anyhow::Result<_>>()?,
-            };
             let guard = self.lock_state();
             let today = chrono::Local::now().date_naive();
-            let result = series::query_series(guard.workspace(), &request, today)?;
-            Ok(serde_json::to_string_pretty(&wire::series_result(result)?)?)
+            let result = run_query_series(guard.workspace(), &p, today)?;
+            Ok(serde_json::to_string_pretty(&result)?)
         })()
         .map_err(render_error)
     }
@@ -989,6 +999,46 @@ postings:
             price_currency: None,
             memo: None,
         }
+    }
+
+    #[test]
+    fn run_query_series_answers_what_the_method_answers() {
+        let (_dir, server) = test_server();
+        add_account(&server, "Expenses:Food", "Expense");
+        add_account(&server, "Assets:Cash", "Asset");
+        server
+            .add_transaction(AddTransactionParams {
+                apply_default_tags: true,
+                date: "2026-05-21".into(),
+                narration: "groceries".into(),
+                payee: None,
+                tags: vec![],
+                status: None,
+                postings: vec![
+                    posting_param("Expenses:Food", "1200"),
+                    posting_param("Assets:Cash", "-1200"),
+                ],
+                comment: None,
+            })
+            .expect("add_transaction");
+
+        let mut q = api::SeriesQuery::new(api::Measure::Flow);
+        q.accounts = vec!["Expenses:Food".into()];
+        let p = QuerySeriesParams {
+            from: "2026-05-01".into(),
+            to: "2026-05-31".into(),
+            interval: api::Interval::Month,
+            currency: None,
+            series: vec![q],
+        };
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+        let result = run_query_series(server.lock_state().workspace(), &p, today).unwrap();
+        assert_eq!(
+            result.buckets,
+            vec![chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()]
+        );
+        assert_eq!(result.series[0].label, "Flow");
+        assert_eq!(result.series[0].values, vec![Some("1200".to_string())]);
     }
 
     fn add_account(server: &LedgerMethods, name: &str, ty: &str) -> String {

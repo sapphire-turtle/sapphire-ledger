@@ -774,6 +774,50 @@ long, with no restart. A refused token is 401; with the bridge not running
 every request is 503, because the token may well be fine. This server holds
 no key file and no user registry of its own.
 
+**`/api/series` answers one series query for Grafana.** The ledger's own
+route ([`http.rs`](../cli/src/http.rs)) is on the same listener as `/mcp`,
+behind the same external-device token, and is served whatever `[mcp] http`
+says — so the listener is always up, on loopback by default. A `GET` takes
+`query_series`' parameters flat in the query string, with **one series per
+request** (`accounts`, `account_types` and `tags` repeat:
+`accounts=Expenses:Food&accounts=Expenses:Rent`; an empty value, as an unset
+Grafana variable sends, is the parameter left out), and answers rows:
+
+```json
+[{"date": "2026-10-01", "series": "Expenses:Food", "value": 12000}]
+```
+
+`date` is the bucket, `series` the result series' label, `value` a number; a
+bucket after today in an actual series is no row, so a line stops at today.
+A bad parameter or a query `query_series` refuses is 400, a server with no
+ledger selected 503, both as `{"error": "…"}`. Prometheus' `/metrics` was
+ruled out — a scrape keeps the value *now*, and a backdated transaction would
+never reach the history; a query language Grafana speaks natively is
+[#47](https://github.com/sapphire-turtle/sapphire-ledger/issues/47).
+
+#### Grafana
+
+Through the [Infinity](https://grafana.com/grafana/plugins/yesoreyeram-infinity-datasource/)
+data source, which asks from Grafana's backend, so a Grafana on the same
+host reaches the ledger on loopback:
+
+- **Data source.** URL `http://127.0.0.1:3173`; a custom header
+  `Authorization: Bearer <token>`, the token of an external device allowed
+  the ledger (`external-device add`); that URL in Infinity's own allowed
+  hosts.
+- **Query.** Type JSON, parser *backend*, URL
+  `/api/series?measure=flow&interval=month&group_by=account&depth=2&from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}`;
+  columns `date` (time), `series` (string), `value` (number); then the
+  **Partition by values** transformation on `series` for a line per group.
+  The columns never change, so one query set up this way serves any
+  parameters.
+- **Grafana in Docker.** The container's `127.0.0.1` is not the host's: use
+  `host.docker.internal` (with `--add-host=host.docker.internal:host-gateway`
+  on Linux) and set `[http] listen` to an address the container reaches.
+  The `Host` allowlist is rmcp's and guards `/mcp` alone, so `/api/series`
+  needs no `allowed_hosts` entry — but with `/mcp` also on, a bind past
+  loopback still needs one, or `serve` refuses to start.
+
 **Duplicate ids are reported, never resolved.** A background watch re-walks
 the workspace once at startup and then every five minutes, and logs any id
 (or, for accounts, any name) claimed by more than one file at `WARN`, naming
