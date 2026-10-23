@@ -15,7 +15,7 @@ sapphire-framework = { workspace = true, features = ["eframe", "ipc"] }
 # Nothing of the files: the desktop reads nothing from disk.
 sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "2.0.0" }
 # Plots for the Charts screen; 0.37 renders with egui 0.36, the framework's.
-egui_plot = "0.37"
+egui_plot = "0.38"
 chrono.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
