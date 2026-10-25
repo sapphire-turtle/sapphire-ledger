@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.1.0...v0.2.0) - 2026-10-25
+
+### Added
+
+- let cargo binstall install the release binaries
+- *(cli)* [**breaking**] panel list and panel run in place of budget report
+- *(mcp)* query_series and panels as query presets, in place of budget_report
+- *(api)* series query and panel types, and the panel templates
+- *(cli)* budget report
+- *(mcp)* budget tools and update_account for agents
+- *(api)* [**breaking**] default tags and budgets in the ledger's API, version 2
+- *(core)* copy accounts' default tags into new transactions
+
+### Fixed
+
+- budget edits carry template panels along; budget opening counts sub-accounts
+
+### Other
+
+- update to sapphire-framework 0.22
+- note that any MCP client works, not only sapphire-agent
+- Merge pull request #46 from sapphire-turtle/feat/binstall
+- the series query, panels and the Charts screen
+
 ### Changed
 
 - [**breaking**] sapphire-framework 0.22: the server's settings move from `server.toml` to `config.toml` (migrated on first start), `[mcp] http` is now `[http.mcp] enabled`, and `serve` restarts in place on `config set --restart`. New framework verb `config` reads and writes those settings by key. Upgrade `sapphire-bridge` together with the ledger.
