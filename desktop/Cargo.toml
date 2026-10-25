@@ -1,6 +1,6 @@
 [package]
 name = "sapphire-ledger-desktop"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 description = "Desktop GUI for sapphire-ledger"
 license-file = "LICENSE"
@@ -13,7 +13,7 @@ publish = false
 sapphire-framework = { workspace = true, features = ["eframe", "ipc"] }
 # The ledger's methods, their parameters and the records they answer with.
 # Nothing of the files: the desktop reads nothing from disk.
-sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "2.0.0" }
+sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "2.1.0" }
 # Plots for the Charts screen; 0.38 renders with egui 0.37, the framework's.
 egui_plot = "0.38"
 chrono.workspace = true
@@ -26,7 +26,7 @@ tracing.workspace = true
 [dev-dependencies]
 # The real server, for the client test: `serve::build()`.
 sapphire-ledger = { path = "../cli", default-features = false }
-sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.2.0", default-features = false }
+sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3.0", default-features = false }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "time"] }
 

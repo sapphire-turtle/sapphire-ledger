@@ -2,7 +2,7 @@
 name = "sapphire-ledger-api"
 # The major is the ledger's API version (`API_VERSION`); it moves only when the
 # methods or their types break, not with the ledger's version.
-version = "2.0.0"
+version = "2.1.0"
 edition.workspace = true
 description = "The methods a sapphire-ledger app server serves, and their types"
 license.workspace = true

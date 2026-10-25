@@ -1,6 +1,6 @@
 [package]
 name = "sapphire-ledger"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -26,9 +26,9 @@ redb-store = [
 ]
 
 [dependencies]
-sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "2.0.0" }
-sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.2.0", default-features = false }
-sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.2.0", default-features = false }
+sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "2.1.0" }
+sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3.0", default-features = false }
+sapphire-ledger-mcp = { path = "../crates/sapphire-ledger-mcp", version = "0.2.1", default-features = false }
 sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp"] }
 anyhow.workspace = true
 chrono.workspace = true

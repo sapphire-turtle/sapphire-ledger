@@ -3674,9 +3674,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "5.5.0"
+version = "5.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c7c9e0d9b23589f26070720bac724174bfec1083e82f7854cdd0267518343c0"
+checksum = "7f59006ce1e204c30956638535b74d317bca99477b9356dfaec54c37f6f600ab"
 dependencies = [
  "num-traits",
 ]
@@ -5130,7 +5130,7 @@ dependencies = [
 
 [[package]]
 name = "sapphire-ledger"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5150,7 +5150,7 @@ dependencies = [
 
 [[package]]
 name = "sapphire-ledger-api"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "chrono",
  "rust_decimal",
@@ -5162,7 +5162,7 @@ dependencies = [
 
 [[package]]
 name = "sapphire-ledger-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "grain-id",
@@ -5177,7 +5177,7 @@ dependencies = [
 
 [[package]]
 name = "sapphire-ledger-desktop"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "egui_plot",
@@ -5195,7 +5195,7 @@ dependencies = [
 
 [[package]]
 name = "sapphire-ledger-mcp"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5870,7 +5870,7 @@ checksum = "dfadb8526b6da90704feb293b0701a6aae62ea14983143344be2dc5ce30f1d82"
 dependencies = [
  "fnv",
  "nom 7.1.3",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "serde",
  "serde_json",
 ]
@@ -6967,7 +6967,7 @@ dependencies = [
  "objc2-metal 0.3.2",
  "objc2-quartz-core 0.3.2",
  "once_cell",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "portable-atomic",
  "portable-atomic-util",
