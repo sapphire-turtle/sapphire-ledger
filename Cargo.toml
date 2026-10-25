@@ -30,12 +30,12 @@ rust_decimal = { version = "1", features = ["serde", "serde-with-str"] }
 # subcommand and `/mcp` over HTTP. `redb-store` must be named: with default
 # features off the framework's persistent store silently falls back to
 # in-memory otherwise.
-sapphire-framework = { version = "0.21.0", default-features = false }
+sapphire-framework = { version = "0.22.0", default-features = false }
 # The framework's methods every app server serves, under the ledger's own API.
-sapphire-server-api = { package = "sapphire-framework-server-api", version = "4.2" }
+sapphire-server-api = { package = "sapphire-framework-server-api", version = "5.0" }
 # YAML front matter for the Markdown records (accounts, transactions).
-sapphire-frontmatter = { package = "sapphire-framework-frontmatter", version = "0.21.0" }
-sapphire-workspace = { package = "sapphire-framework-workspace", version = "0.21.0", default-features = false }
+sapphire-frontmatter = { package = "sapphire-framework-frontmatter", version = "0.22.0" }
+sapphire-workspace = { package = "sapphire-framework-workspace", version = "0.22.0", default-features = false }
 schemars = "1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

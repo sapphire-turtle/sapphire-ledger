@@ -2,9 +2,10 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser as _;
+use sapphire_framework::server::Settings;
 use sapphire_ledger::cli::{Cli, Command, FrameworkCommand};
 use sapphire_ledger::{commands, serve};
-use sapphire_ledger_core::AppKind;
+use sapphire_ledger_core::{AppKind, LEDGER_CTX};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -19,8 +20,12 @@ fn main() -> Result<()> {
         // framework's console log goes to stderr (sapphire-framework#232).
         Command::Framework(command) => {
             sapphire_ledger_core::init_app_context(AppKind::Cli);
-            let code =
-                runtime()?.block_on(command.dispatch(serve::build_oneshot(), serve::VERSION))?;
+            let code = runtime()?.block_on(command.dispatch(
+                &LEDGER_CTX,
+                serve::LedgerSettings,
+                |_: &Settings| serve::build_oneshot(),
+                serve::VERSION,
+            ))?;
             if code != 0 {
                 std::process::exit(code);
             }

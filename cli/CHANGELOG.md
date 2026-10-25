@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [**breaking**] sapphire-framework 0.22: the server's settings move from `server.toml` to `config.toml` (migrated on first start), `[mcp] http` is now `[http.mcp] enabled`, and `serve` restarts in place on `config set --restart`. New framework verb `config` reads and writes those settings by key. Upgrade `sapphire-bridge` together with the ledger.
+
 ## [0.1.0](https://github.com/sapphire-turtle/sapphire-ledger/releases/tag/v0.1.0) - 2026-10-15
 
 ### Added

@@ -623,7 +623,7 @@ has selected:
   starts one; a missing server is reported per call, and the next call tries
   again.
 - **HTTP** — `/mcp` on the server's HTTP listener, behind the workgroup's
-  external-device tokens, when `server.toml` turns it on. See [Server:
+  external-device tokens, when `config.toml` turns it on. See [Server:
   `sapphire-ledger serve`](#server-sapphire-ledger-serve) below.
 
 The two halves live in `sapphire-ledger-mcp`:
@@ -702,8 +702,8 @@ signals, `<data dir>/logs/app.log`) plus what is the ledger's own — sync
 through the host's `sapphire-bridge`, the `sapphire-ledger.*` methods its
 MCP tools call, and the duplicate-id watch. The framework's other verbs
 (`status`, `service install|uninstall|status`,
-`workspace init|select|show|move|remove|map`, `workgroup …`, `device …`,
-`embedding …`, `external-device …`, `mcp`) are flattened into the same command line
+`workspace init|select|show|move|remove`, `workgroup …`, `device …`,
+`embedding …`, `external-device …`, `config …`, `update`, `mcp`) are flattened into the same command line
 beside the ledger's own. The original reasoning for `/mcp` lives in
 [`docs/superpowers/specs/2026-09-02-ledger-server-design.md`](superpowers/specs/2026-09-02-ledger-server-design.md);
 its key-file and user/device sections were superseded by sapphire-framework
@@ -711,7 +711,7 @@ its key-file and user/device sections were superseded by sapphire-framework
 
 **The server serves one workspace: the one selected.** `--ledger-dir` is for
 the ledger's own verbs; the server serves whatever `workspace select` (or
-`workspace init`, `workspace map`) last chose, remembered in
+`workspace init`, `workspace init --sync --remote-workspace`) last chose, remembered in
 `<config dir>/workspace.toml` across restarts. The MCP tools and the watch
 follow a switch without a restart.
 
@@ -726,24 +726,31 @@ no cache a second process could collide on, so they need nothing from it. A
 running server notices their writes the way it notices a human's editor.
 Routing them over IPC instead is a later step.
 
-**HTTP settings live in `<config dir>/server.toml`**, not in flags, because
-the service manager starts the binary as plain `serve`. The file is the
-framework's (`ServerConfig`), shared by every sapphire app:
+**HTTP settings live in `<config dir>/config.toml`**, not in flags, because
+the service manager starts the binary as plain `serve`. The tables are the
+framework's (`ServerConfig`), shared by every sapphire app, and
+`sapphire-ledger config list|get|set|unset` edits them by key
+(`http.listen`, `http.allowed_hosts`, `http.mcp.enabled`), with `--restart`
+to apply the change:
 
 ```toml
 [http]
 listen = "127.0.0.1:3173"      # the ledger's default when omitted
 allowed_hosts = ["ledger.example.net"]
 
-[mcp]
-http = true                    # serve /mcp; off by default
+[http.mcp]
+enabled = true                 # serve /mcp; off by default
 ```
 
 A missing file is all defaults — `/mcp` **off**; an unknown key is an error,
-so a typo cannot quietly fall back to loopback. The ledger's earlier format
-(`[http] enabled` / `addr`) is one such error: rename `addr` to `listen` and
-replace `enabled = true` with `[mcp] http = true`. A listener that cannot
-bind is logged and does not stop the server.
+so a typo cannot quietly fall back to loopback. The file used to be
+`server.toml`, with `[mcp] http = true` for what is now `[http.mcp] enabled`:
+the server moves `server.toml` over to `config.toml` on its first start
+(keeping it as `server.toml.v1`), and a file that still has `[mcp]` is
+refused with a message saying where the setting went. The ledger's earlier
+format (`[http] enabled` / `addr`) is an error too: rename `addr` to `listen`
+and replace `enabled = true` with `[http.mcp] enabled = true`. A listener
+that cannot bind is logged and does not stop the server.
 
 **The `Host` allowlist is never empty.** rmcp refuses any request whose
 `Host` header isn't on an allowlist, and its own default is loopback-only.
@@ -752,7 +759,7 @@ list is never handed to rmcp, which would read that as "allow every host"
 instead of "loopback only". `listen` is what widens the bind, and
 `allowed_hosts` is what widens this list. With `/mcp` on and bound beyond
 loopback with no `allowed_hosts` at all, `sapphire-ledger serve` **refuses
-to start**: a wide bind with an empty allowlist would 403 every request,
+to start**, and `config set` refuses to write it: a wide bind with an empty allowlist would 403 every request,
 which is useless rather than dangerous, and would present as a client bug
 rather than a configuration mistake.
 

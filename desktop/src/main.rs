@@ -2,8 +2,8 @@
 //! its Settings.
 //!
 //! A pure client, like sapphire-sync's: it talks to the service-managed
-//! `sapphire-ledger serve` and `sapphire-bridge` over IPC and never starts
-//! either itself. The Ledger screen calls the server's `sapphire-ledger.*`
+//! `sapphire-ledger serve` over IPC, which relays what the bridge has to
+//! say, and never starts either itself. The Ledger screen calls the server's `sapphire-ledger.*`
 //! methods, so it shows the workspace the server has selected; the Charts
 //! screen draws the workspace's panels from `run_panel`; Settings, at the
 //! rail's foot, picks that workspace and manages the workgroup. Closing the
