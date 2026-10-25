@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-mcp-v0.1.0...sapphire-ledger-mcp-v0.2.0) - 2026-10-25
+
+### Added
+
+- *(mcp)* query_series and panels as query presets, in place of budget_report
+- *(api)* series query and panel types, and the panel templates
+- *(mcp)* budget tools and update_account for agents
+- *(mcp)* budget and account-update methods on the app server
+- *(api)* [**breaking**] default tags and budgets in the ledger's API, version 2
+- *(core)* copy accounts' default tags into new transactions
+
+### Fixed
+
+- budget edits carry template panels along; budget opening counts sub-accounts
+
+### Other
+
+- say update ops rewrite from known fields
+
 ## [0.1.0](https://github.com/sapphire-turtle/sapphire-ledger/releases/tag/sapphire-ledger-mcp-v0.1.0) - 2026-10-15
 
 ### Added
