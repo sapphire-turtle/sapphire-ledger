@@ -20,8 +20,8 @@ pub use sapphire_server_api as server;
 mod params;
 pub use params::{
     AddAccountParams, AddAssertionParams, AddBudgetParams, AddPriceParams, AddTransactionParams,
-    BalanceParam, EmptyParams, GetTransactionParams, PostingParam, QueryPostingsParams,
-    QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
+    AddTransactionsParams, BalanceParam, EmptyParams, GetTransactionParams, PostingParam,
+    QueryPostingsParams, QueryPricesParams, UpdateAccountParams, UpdateBudgetParams,
 };
 
 mod series;
@@ -75,6 +75,9 @@ pub const VALIDATE_WORKSPACE: &str = "sapphire-ledger.validate_workspace";
 pub const ADD_ACCOUNT: &str = "sapphire-ledger.add_account";
 /// Record a transaction; answers with a confirmation to show as it is.
 pub const ADD_TRANSACTION: &str = "sapphire-ledger.add_transaction";
+/// Record several transactions, all or none; answers with a confirmation to
+/// show as it is.
+pub const ADD_TRANSACTIONS: &str = "sapphire-ledger.add_transactions";
 /// Assert an account's balance; answers with a confirmation to show as it is.
 pub const ADD_ASSERTION: &str = "sapphire-ledger.add_assertion";
 /// Record an exchange rate; answers with a confirmation to show as it is.

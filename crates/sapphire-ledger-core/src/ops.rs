@@ -116,11 +116,24 @@ fn mint_free_id<F>(
 where
     F: Fn(&str) -> PathBuf,
 {
-    let taken: HashSet<String> = walk_files(&root.join(kind_dir), extension)?
+    mint_id_not_in(&taken_ids(root, kind_dir, extension)?, root, relative)
+}
+
+/// Every id already taken by a record of this kind: its files' stems.
+fn taken_ids(root: &Path, kind_dir: &str, extension: &str) -> Result<HashSet<String>> {
+    Ok(walk_files(&root.join(kind_dir), extension)?
         .iter()
         .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
-        .collect();
+        .collect())
+}
 
+/// [`mint_free_id`] against a `taken` set the caller keeps: a batch adds each
+/// id it mints, so two of its records cannot share one before either is on
+/// disk.
+fn mint_id_not_in<F>(taken: &HashSet<String>, root: &Path, relative: F) -> Result<(String, PathBuf)>
+where
+    F: Fn(&str) -> PathBuf,
+{
     for attempt in 0..ID_ATTEMPTS {
         let id = if attempt == 0 {
             new_id()
@@ -308,32 +321,113 @@ pub fn create_transaction(
 ) -> Result<(String, PathBuf)> {
     refuse_other_schema(root)?;
     let accounts = load_accounts(root)?;
-    let postings = resolve_postings(postings, &accounts)?;
-    let tags = if apply_default_tags {
-        with_default_tags(tags, &postings, &accounts)
+    let taken = taken_ids(root, TRANSACTIONS_DIR, MARKDOWN_EXTENSION)?;
+    let (transaction, dest) = prepare_transaction(
+        root,
+        &accounts,
+        &taken,
+        NewTransaction {
+            date,
+            narration,
+            payee,
+            tags,
+            status,
+            postings,
+            comment,
+            apply_default_tags,
+        },
+    )?;
+    save_markdown(&dest, &transaction)?;
+    Ok((transaction.id, dest))
+}
+
+/// A transaction to record: [`create_transaction`]'s arguments, for
+/// [`create_transactions`].
+#[derive(Debug, Clone)]
+pub struct NewTransaction {
+    pub date: NaiveDate,
+    pub narration: String,
+    pub payee: Option<String>,
+    pub tags: Vec<String>,
+    pub status: Option<TransactionStatus>,
+    pub postings: Vec<Posting>,
+    pub comment: Option<String>,
+    pub apply_default_tags: bool,
+}
+
+/// Write several transactions, all or none.
+///
+/// Every one is resolved and validated before any is written, so a bad one
+/// refuses the batch with nothing on disk; its error is wrapped in
+/// [`Error::InBatch`], naming its position. If a write itself fails part way,
+/// the files already written are removed again (best effort) before the error
+/// is returned. Answers each one's id and path, in the order given.
+pub fn create_transactions(
+    root: &Path,
+    batch: Vec<NewTransaction>,
+) -> Result<Vec<(String, PathBuf)>> {
+    refuse_other_schema(root)?;
+    let accounts = load_accounts(root)?;
+    let mut taken = taken_ids(root, TRANSACTIONS_DIR, MARKDOWN_EXTENSION)?;
+
+    let mut prepared = Vec::with_capacity(batch.len());
+    for (index, new) in batch.into_iter().enumerate() {
+        let (transaction, dest) =
+            prepare_transaction(root, &accounts, &taken, new).map_err(|e| Error::InBatch {
+                position: index + 1,
+                source: Box::new(e),
+            })?;
+        taken.insert(transaction.id.clone());
+        prepared.push((transaction, dest));
+    }
+
+    let mut written: Vec<(String, PathBuf)> = Vec::with_capacity(prepared.len());
+    for (index, (transaction, dest)) in prepared.into_iter().enumerate() {
+        if let Err(e) = save_markdown(&dest, &transaction) {
+            for (_, path) in &written {
+                let _ = std::fs::remove_file(path);
+            }
+            return Err(Error::InBatch {
+                position: index + 1,
+                source: Box::new(e),
+            });
+        }
+        written.push((transaction.id, dest));
+    }
+    Ok(written)
+}
+
+/// Resolve, tag, mint and validate one transaction without writing it:
+/// everything [`create_transaction`] does before touching disk.
+fn prepare_transaction(
+    root: &Path,
+    accounts: &[Account],
+    taken: &HashSet<String>,
+    new: NewTransaction,
+) -> Result<(Transaction, PathBuf)> {
+    let postings = resolve_postings(new.postings, accounts)?;
+    let tags = if new.apply_default_tags {
+        with_default_tags(new.tags, &postings, accounts)
     } else {
-        tags
+        new.tags
     };
 
-    let (id, dest) = mint_free_id(root, TRANSACTIONS_DIR, MARKDOWN_EXTENSION, |id| {
-        transaction_relative_path(date, id)
-    })?;
+    let (id, dest) = mint_id_not_in(taken, root, |id| transaction_relative_path(new.date, id))?;
     let timestamp = now();
     let transaction = Transaction {
-        id: id.clone(),
-        date,
-        narration,
-        payee,
+        id,
+        date: new.date,
+        narration: new.narration,
+        payee: new.payee,
         tags,
-        status,
+        status: new.status,
         created_at: timestamp,
         updated_at: timestamp,
         postings,
-        comment,
+        comment: new.comment,
     };
     transaction.validate()?;
-    save_markdown(&dest, &transaction)?;
-    Ok((id, dest))
+    Ok((transaction, dest))
 }
 
 /// Write a new balance assertion.

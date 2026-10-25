@@ -40,6 +40,16 @@ pub enum Error {
         source: Box<Error>,
     },
 
+    /// The record at `position` (counted from 1) of a batch write, which
+    /// refused or failed the whole batch. A context wrapper like
+    /// [`Error::Record`]: render the chain.
+    #[error("#{position} in the batch")]
+    InBatch {
+        position: usize,
+        #[source]
+        source: Box<Error>,
+    },
+
     #[error("not a sapphire-ledger workspace: no .sapphire-ledger/ found from {0}")]
     NotAWorkspace(PathBuf),
 }

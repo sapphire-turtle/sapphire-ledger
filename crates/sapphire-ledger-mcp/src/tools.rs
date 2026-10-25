@@ -19,9 +19,9 @@ use serde::Serialize;
 
 use sapphire_ledger_api::{
     self as api, AddAccountParams, AddAssertionParams, AddBudgetParams, AddPanelParams,
-    AddPriceParams, AddTransactionParams, DeletePanelParams, EmptyParams, GetTransactionParams,
-    QueryPostingsParams, QueryPricesParams, QuerySeriesParams, RunPanelParams, UpdateAccountParams,
-    UpdateBudgetParams, UpdatePanelParams,
+    AddPriceParams, AddTransactionParams, AddTransactionsParams, DeletePanelParams, EmptyParams,
+    GetTransactionParams, QueryPostingsParams, QueryPricesParams, QuerySeriesParams,
+    RunPanelParams, UpdateAccountParams, UpdateBudgetParams, UpdatePanelParams,
 };
 
 /// How the ledger answers MCP: [`LedgerTools`], one per session.
@@ -151,6 +151,19 @@ impl LedgerTools {
         Parameters(p): Parameters<AddTransactionParams>,
     ) -> Result<String, String> {
         self.call(api::ADD_TRANSACTION, p).await
+    }
+
+    #[tool(
+        description = "Record several transactions in one call, each as add_transaction \
+        takes it: use this for a batch (a statement, a CSV) rather than one call per row. \
+        All are checked before any is written; if one fails, none is written and the \
+        error names its position (#1 is the first). Returns each new id in order."
+    )]
+    pub async fn add_transactions(
+        &self,
+        Parameters(p): Parameters<AddTransactionsParams>,
+    ) -> Result<String, String> {
+        self.call(api::ADD_TRANSACTIONS, p).await
     }
 
     #[tool(
@@ -309,7 +322,7 @@ impl ServerHandler for LedgerTools {
         info.with_instructions(format!(
             "Sapphire Ledger is a plain-text double-entry household ledger. Use \
              list_accounts to see the chart of accounts, query_postings to find what \
-             happened to an account, add_transaction to record spending, and \
+             happened to an account, add_transaction to record spending (add_transactions for many at once), and \
              validate_workspace to check the books. Every transaction must balance: its \
              postings sum to zero per currency. An account must exist before anything \
              can be posted to it. list_panels and run_panel show saved charts (a budget's pace, net worth, …) \
@@ -344,7 +357,7 @@ mod tests {
         }
     }
 
-    /// The ledger's nineteen, the framework's read-only seven, and none of the
+    /// The ledger's twenty, the framework's read-only seven, and none of the
     /// framework's raw file writes.
     #[test]
     fn the_ledger_serves_its_tools_and_the_frameworks_read_only_ones() {
@@ -362,6 +375,7 @@ mod tests {
             "update_account",
             "list_accounts",
             "add_transaction",
+            "add_transactions",
             "validate_workspace",
             "status",
             "workspace_show",
@@ -379,6 +393,6 @@ mod tests {
             "raw writes would bypass the ledger's checks: {names:?}"
         );
         assert!(!names.iter().any(|n| n == "budget_report"), "{names:?}");
-        assert_eq!(names.len(), 19 + 7, "{names:?}");
+        assert_eq!(names.len(), 20 + 7, "{names:?}");
     }
 }
