@@ -1264,8 +1264,8 @@ fn draw_plot(
         .include_x(count as f64 - 0.5)
         .height(height)
         .y_axis_min_width(72.0)
-        .link_axis("panel_x", [true, false])
-        .link_cursor("panel_x", [true, false])
+        .link_axis(egui::Id::unique("panel_x"), [true, false])
+        .link_cursor(egui::Id::unique("panel_x"), [true, false])
         .x_axis_formatter(move |mark, _| {
             let x = mark.value;
             if (x - x.round()).abs() > 1e-6 || x < 0.0 {

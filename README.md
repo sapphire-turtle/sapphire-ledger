@@ -36,7 +36,7 @@ app-server verbs beside them (`serve`, `status`, `service`, `workspace`,
 `workgroup`, `device`, `external-device`, `mcp`, …). With the server
 running (`sapphire-ledger serve`, or a bare `sapphire-ledger`), point an MCP
 client at `sapphire-ledger mcp` to read and record entries over stdio, or turn
-on its `/mcp` in `server.toml` and reach it over HTTP with an external-device
+on its `/mcp` in `config.toml` (`[http.mcp] enabled`) and reach it over HTTP with an external-device
 token. Both serve the workspace the server has selected (see
 [`docs/design.md`](docs/design.md#mcp-server) for the setup and the auth
 model). The desktop app (`sapphire-ledger-desktop`) is a client of that
