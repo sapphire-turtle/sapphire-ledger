@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-api-v2.0.0...sapphire-ledger-api-v2.1.0) - 2026-10-25
+
+### Added
+
+- *(mcp)* add_transactions, many transactions in one call, all or none
+
+### Other
+
+- Merge pull request #41 from sapphire-turtle/release-plz/2026-10-16T04-45-46Z
+
 ## [2.0.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-api-v1.0.0...sapphire-ledger-api-v2.0.0) - 2026-10-25
 
 ### Added
