@@ -1,3 +1,5 @@
+<img src="docs/icon.svg" alt="" width="72" height="72">
+
 # sapphire-ledger（日本語）
 
 > Language: [English](README.md) | **日本語**
