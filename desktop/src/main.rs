@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use sapphire_framework::gui::app::{AppOptions, AppSetup};
 use sapphire_framework::gui::client::AppIdentity;
-use sapphire_framework::gui::{Destination, Settings, Shell, eframe, egui};
+use sapphire_framework::gui::{Destination, Settings, Shell, ShellApp, Side, eframe, egui};
 
 use crate::charts::ChartsView;
 use crate::client::LedgerClient;
@@ -38,21 +38,40 @@ enum Screen {
 
 struct App {
     shell: Shell<Screen>,
+    views: Views,
+}
+
+/// The screens' state, which the shell draws as a [`ShellApp`].
+struct Views {
     ledger: LedgerView,
     charts: ChartsView,
 }
 
+impl ShellApp<Screen> for Views {
+    fn screen_ui(&mut self, ui: &mut egui::Ui, screen: Screen, side: &mut Side) {
+        match screen {
+            Screen::Ledger => self.ledger.ui(ui, side),
+            Screen::Charts => {
+                egui::CentralPanel::default().show(ui, |ui| self.charts.ui(ui));
+            }
+        }
+    }
+
+    /// The Ledger's picked transaction or account, or its form; the other
+    /// screens pick nothing.
+    fn side_ui(&mut self, ui: &mut egui::Ui, screen: Option<Screen>, side: &mut Side) {
+        match screen {
+            Some(Screen::Ledger) => self.ledger.side_ui(ui, side),
+            Some(Screen::Charts) | None => {
+                ui.weak("Nothing selected.");
+            }
+        }
+    }
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let (ledger, charts) = (&mut self.ledger, &mut self.charts);
-        self.shell.ui(ui, |ui, screen| match screen {
-            Screen::Ledger => {
-                egui::CentralPanel::default().show(ui, |ui| ledger.ui(ui));
-            }
-            Screen::Charts => {
-                egui::CentralPanel::default().show(ui, |ui| charts.ui(ui));
-            }
-        });
+        self.shell.show(ui, &mut self.views);
     }
 }
 
@@ -84,12 +103,14 @@ fn main() -> eframe::Result<()> {
             );
             Box::new(App {
                 shell,
-                ledger: LedgerView::new(
-                    setup.runtime.clone(),
-                    Arc::clone(&ledger_client),
-                    Arc::clone(&setup.repaint),
-                ),
-                charts: ChartsView::new(setup.runtime, ledger_client, setup.repaint),
+                views: Views {
+                    ledger: LedgerView::new(
+                        setup.runtime.clone(),
+                        Arc::clone(&ledger_client),
+                        Arc::clone(&setup.repaint),
+                    ),
+                    charts: ChartsView::new(setup.runtime, ledger_client, setup.repaint),
+                },
             })
         },
     )

@@ -1,5 +1,6 @@
 //! The Ledger tab: the chart of accounts with balances, the postings of the
-//! chosen account, the books' validation issues, and the two entry forms.
+//! chosen account, the books' validation issues, and in the side pane the
+//! picked transaction or account and the entry forms.
 //!
 //! Everything comes from the running server's `sapphire-ledger.*` methods
 //! ([`LedgerClient`]), so the tab shows the workspace the server has
@@ -12,9 +13,10 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use rust_decimal::Decimal;
-use sapphire_framework::gui::egui;
+use sapphire_framework::gui::{Side, egui};
 use sapphire_ledger_api::{
-    self as api, Account, EmptyParams, PostingHit, QueryPostingsParams, ValidationIssue,
+    self as api, Account, EmptyParams, GetTransactionParams, PostingHit, QueryPostingsParams,
+    Transaction, TransactionStatus, ValidationIssue,
 };
 
 use crate::client::LedgerClient;
@@ -28,6 +30,8 @@ const REFRESH_EVERY: Duration = Duration::from_secs(10);
 enum Reply {
     /// One refresh: the accounts, every posting, and the validation issues.
     Books(Result<Books, String>),
+    /// The picked transaction, by id.
+    Transaction(String, Result<Transaction, String>),
     /// A form was sent; the text is the server's confirmation.
     Written(Sent, Result<String, String>),
 }
@@ -43,6 +47,20 @@ struct Books {
     accounts: Vec<Account>,
     postings: Vec<PostingHit>,
     issues: Vec<ValidationIssue>,
+}
+
+/// What the side pane shows when no form is open, by id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Pick {
+    Transaction(String),
+    Account(String),
+}
+
+/// The form open in the side pane; one at a time.
+enum Editor {
+    Transaction(TxForm),
+    Account(AccountForm),
+    Tags(TagsForm),
 }
 
 pub struct LedgerView {
@@ -61,9 +79,14 @@ pub struct LedgerView {
     /// The last write's confirmation, shown under the toolbar.
     notice: Option<String>,
 
-    tx_form: Option<TxForm>,
-    account_form: Option<AccountForm>,
-    tags_form: Option<TagsForm>,
+    /// The transaction or account shown in the side pane.
+    picked: Option<Pick>,
+    /// The picked transaction as `get_transaction` answered; `None` while
+    /// it is on its way.
+    transaction: Option<(String, Result<Transaction, String>)>,
+
+    /// The form in the side pane, shown in place of the picked item.
+    editor: Option<Editor>,
     /// A form is on its way to the server.
     sending: bool,
     /// Why the open form was not sent (or was refused).
@@ -87,16 +110,18 @@ impl LedgerView {
             last_refresh: None,
             selected: None,
             notice: None,
-            tx_form: None,
-            account_form: None,
-            tags_form: None,
+            picked: None,
+            transaction: None,
+            editor: None,
             sending: false,
             form_error: None,
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui) {
-        self.drain_replies();
+    pub fn ui(&mut self, ui: &mut egui::Ui, side: &mut Side) {
+        if self.drain_replies() {
+            side.close();
+        }
         if !self.loading
             && self
                 .last_refresh
@@ -107,7 +132,7 @@ impl LedgerView {
         // Wake up for the next automatic refresh even if nothing else happens.
         ui.ctx().request_repaint_after(REFRESH_EVERY);
 
-        egui::Panel::top("ledger_toolbar").show(ui, |ui| self.toolbar(ui));
+        egui::Panel::top("ledger_toolbar").show(ui, |ui| self.toolbar(ui, side));
         if self.books.as_ref().is_some_and(|b| !b.issues.is_empty()) {
             egui::Panel::bottom("ledger_issues")
                 .resizable(true)
@@ -117,12 +142,25 @@ impl LedgerView {
         egui::Panel::left("ledger_accounts")
             .resizable(true)
             .default_size(280.0)
-            .show(ui, |ui| self.accounts(ui));
-        egui::CentralPanel::default().show(ui, |ui| self.postings(ui));
+            .show(ui, |ui| self.accounts(ui, side));
+        egui::CentralPanel::default().show(ui, |ui| self.postings(ui, side));
+    }
 
-        self.tx_window(ui.ctx());
-        self.account_window(ui.ctx());
-        self.tags_window(ui.ctx());
+    /// The side pane: the open form, else the picked transaction or account.
+    pub fn side_ui(&mut self, ui: &mut egui::Ui, side: &mut Side) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            if self.editor.is_some() {
+                self.form_ui(ui, side);
+                return;
+            }
+            match self.picked.clone() {
+                Some(Pick::Transaction(id)) => self.transaction_detail(ui, &id),
+                Some(Pick::Account(id)) => self.account_detail(ui, &id),
+                None => {
+                    ui.weak("Nothing selected.");
+                }
+            }
+        });
     }
 
     // ── server calls ────────────────────────────────────────────────────────
@@ -156,8 +194,24 @@ impl LedgerView {
         });
     }
 
+    fn fetch_transaction(&mut self, id: String) {
+        self.transaction = None;
+        let client = Arc::clone(&self.client);
+        self.spawn(async move {
+            let result = client
+                .read(
+                    api::GET_TRANSACTION,
+                    GetTransactionParams { id: id.clone() },
+                )
+                .await;
+            Reply::Transaction(id, result)
+        });
+    }
+
     fn send_transaction(&mut self) {
-        let Some(form) = &self.tx_form else { return };
+        let Some(Editor::Transaction(form)) = &self.editor else {
+            return;
+        };
         match form.to_params() {
             Ok(params) => {
                 let client = Arc::clone(&self.client);
@@ -172,7 +226,7 @@ impl LedgerView {
     }
 
     fn send_account(&mut self) {
-        let Some(form) = &self.account_form else {
+        let Some(Editor::Account(form)) = &self.editor else {
             return;
         };
         match form.to_params() {
@@ -189,7 +243,7 @@ impl LedgerView {
     }
 
     fn send_tags(&mut self) {
-        let Some(form) = &self.tags_form else {
+        let Some(Editor::Tags(form)) = &self.editor else {
             return;
         };
         let params = form.to_params();
@@ -217,7 +271,10 @@ impl LedgerView {
         });
     }
 
-    fn drain_replies(&mut self) {
+    /// Takes in what came back; true when a new transaction or account was
+    /// recorded, and the side pane is done with its form.
+    fn drain_replies(&mut self) -> bool {
+        let mut done = false;
         while let Ok(reply) = self.replies.1.try_recv() {
             match reply {
                 Reply::Books(Ok(books)) => {
@@ -225,6 +282,14 @@ impl LedgerView {
                         && !books.accounts.iter().any(|a| &a.id == id)
                     {
                         self.selected = None;
+                    }
+                    if self
+                        .picked
+                        .as_ref()
+                        .is_some_and(|p| !still_there(p, &books))
+                    {
+                        self.picked = None;
+                        self.transaction = None;
                     }
                     self.books = Some(books);
                     self.load_error = None;
@@ -236,13 +301,18 @@ impl LedgerView {
                     self.load_error = Some(e);
                     self.loading = false;
                 }
+                Reply::Transaction(id, result) => {
+                    // A reply for a transaction no longer picked is dropped.
+                    if self.picked == Some(Pick::Transaction(id.clone())) {
+                        self.transaction = Some((id, result));
+                    }
+                }
                 Reply::Written(sent, Ok(text)) => {
                     self.sending = false;
-                    match sent {
-                        Sent::Transaction => self.tx_form = None,
-                        Sent::Account => self.account_form = None,
-                        Sent::Tags => self.tags_form = None,
-                    }
+                    self.editor = None;
+                    // New tags go back to their account; a new record has
+                    // nothing more to show.
+                    done |= sent != Sent::Tags;
                     self.notice = Some(first_line(&text));
                     self.refresh();
                 }
@@ -253,11 +323,45 @@ impl LedgerView {
                 }
             }
         }
+        done
+    }
+
+    // ── picking and forms ───────────────────────────────────────────────────
+
+    fn pick_transaction(&mut self, id: String, side: &mut Side) {
+        if self.picked.as_ref() != Some(&Pick::Transaction(id.clone())) {
+            self.picked = Some(Pick::Transaction(id.clone()));
+            self.fetch_transaction(id);
+        }
+        side.open();
+    }
+
+    fn pick_account(&mut self, id: String, side: &mut Side) {
+        self.selected = Some(id.clone());
+        self.picked = Some(Pick::Account(id));
+        self.transaction = None;
+        side.open();
+    }
+
+    fn open_editor(&mut self, editor: Editor, side: &mut Side) {
+        self.editor = Some(editor);
+        self.form_error = None;
+        side.open();
+    }
+
+    /// Drops the open form: back to the picked item, or out of the pane if
+    /// there is none.
+    fn cancel_editor(&mut self, side: &mut Side) {
+        self.editor = None;
+        self.form_error = None;
+        if self.picked.is_none() {
+            side.close();
+        }
     }
 
     // ── panels ──────────────────────────────────────────────────────────────
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, side: &mut Side) {
         ui.horizontal(|ui| {
             let can_write = self.load_error.is_none() && self.books.is_some();
             if ui
@@ -265,15 +369,13 @@ impl LedgerView {
                 .clicked()
             {
                 let currency = self.default_currency();
-                self.tx_form = Some(TxForm::new(today(), &currency));
-                self.form_error = None;
+                self.open_editor(Editor::Transaction(TxForm::new(today(), &currency)), side);
             }
             if ui
                 .add_enabled(can_write, egui::Button::new("New account"))
                 .clicked()
             {
-                self.account_form = Some(AccountForm::new(today()));
-                self.form_error = None;
+                self.open_editor(Editor::Account(AccountForm::new(today())), side);
             }
             if ui
                 .add_enabled(!self.loading, egui::Button::new("Refresh"))
@@ -293,14 +395,21 @@ impl LedgerView {
         }
     }
 
-    fn accounts(&mut self, ui: &mut egui::Ui) {
+    fn accounts(&mut self, ui: &mut egui::Ui, side: &mut Side) {
         let Some(books) = &self.books else {
             ui.label("Loading…");
             return;
         };
         let balances = balances(&books.accounts, &books.postings);
+        let mut all = false;
+        let mut clicked = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.selectable_value(&mut self.selected, None, "All postings");
+            if ui
+                .selectable_label(self.selected.is_none(), "All postings")
+                .clicked()
+            {
+                all = true;
+            }
             if books.accounts.is_empty() {
                 ui.add_space(8.0);
                 ui.label("No accounts yet. Every posting needs one: start with New account.");
@@ -325,7 +434,7 @@ impl LedgerView {
                         .unwrap_or_default();
                     ui.horizontal(|ui| {
                         if ui.selectable_label(selected, &account.name).clicked() {
-                            self.selected = Some(account.id.clone());
+                            clicked = Some(account.id.clone());
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.monospace(total);
@@ -334,22 +443,28 @@ impl LedgerView {
                 }
             }
         });
-    }
-
-    fn postings(&mut self, ui: &mut egui::Ui) {
-        if let Some(form) = self.postings_panel(ui) {
-            self.tags_form = Some(form);
-            self.form_error = None;
+        if all {
+            self.selected = None;
+            if matches!(self.picked, Some(Pick::Account(_))) {
+                self.picked = None;
+            }
+        }
+        if let Some(id) = clicked {
+            self.pick_account(id, side);
         }
     }
 
-    /// The postings of the selected account (or all), and the tags form if
-    /// "Edit tags" was clicked.
-    fn postings_panel(&self, ui: &mut egui::Ui) -> Option<TagsForm> {
-        let mut edit_tags = None;
-        let Some(books) = &self.books else {
-            return None;
-        };
+    fn postings(&mut self, ui: &mut egui::Ui, side: &mut Side) {
+        if let Some(id) = self.postings_panel(ui) {
+            self.pick_transaction(id, side);
+        }
+    }
+
+    /// The postings of the selected account (or all), and the transaction
+    /// whose row was clicked.
+    fn postings_panel(&self, ui: &mut egui::Ui) -> Option<String> {
+        let mut clicked = None;
+        let books = self.books.as_ref()?;
         let account = self
             .selected
             .as_ref()
@@ -357,18 +472,6 @@ impl LedgerView {
         ui.heading(account.map_or("All postings", |a| a.name.as_str()));
         if let Some(a) = account.and_then(|a| a.description.as_deref()) {
             ui.label(a);
-        }
-        if let Some(a) = account {
-            ui.horizontal(|ui| {
-                ui.label(if a.default_tags.is_empty() {
-                    "No default tags".to_owned()
-                } else {
-                    format!("Default tags: {}", a.default_tags.join(", "))
-                });
-                if ui.small_button("Edit tags").clicked() {
-                    edit_tags = Some(TagsForm::new(a));
-                }
-            });
         }
         ui.separator();
 
@@ -379,8 +482,12 @@ impl LedgerView {
             .collect();
         if hits.is_empty() {
             ui.label("No postings.");
-            return edit_tags;
+            return None;
         }
+        let picked = match &self.picked {
+            Some(Pick::Transaction(id)) => Some(id.as_str()),
+            _ => None,
+        };
         // The running balance only means something within one account.
         let running = account.map(|_| running_balances(&hits));
         egui::ScrollArea::both().show(ui, |ui| {
@@ -404,7 +511,10 @@ impl LedgerView {
                     ui.end_row();
                     for (i, hit) in hits.iter().enumerate() {
                         ui.label(hit.date.to_string());
-                        ui.label(&hit.narration);
+                        let on = picked == Some(hit.transaction_id.as_str());
+                        if ui.selectable_label(on, &hit.narration).clicked() {
+                            clicked = Some(hit.transaction_id.clone());
+                        }
                         match &running {
                             Some(running) => {
                                 ui.monospace(format!("{} {}", hit.amount, hit.currency));
@@ -420,7 +530,7 @@ impl LedgerView {
                     }
                 });
         });
-        edit_tags
+        clicked
     }
 
     fn issues(&self, ui: &mut egui::Ui) {
@@ -436,12 +546,151 @@ impl LedgerView {
         });
     }
 
-    // ── forms ───────────────────────────────────────────────────────────────
+    // ── side pane ───────────────────────────────────────────────────────────
 
-    fn tx_window(&mut self, ctx: &egui::Context) {
-        let Some(form) = &mut self.tx_form else {
+    fn transaction_detail(&self, ui: &mut egui::Ui, id: &str) {
+        let tx = match &self.transaction {
+            Some((of, Ok(tx))) if of == id => tx,
+            Some((of, Err(e))) if of == id => {
+                ui.colored_label(ui.visuals().error_fg_color, e);
+                return;
+            }
+            _ => {
+                ui.spinner();
+                return;
+            }
+        };
+        let accounts = self.books.as_ref().map_or(&[][..], |b| &b.accounts[..]);
+        ui.heading(&tx.narration);
+        egui::Grid::new("tx_detail").num_columns(2).show(ui, |ui| {
+            ui.label("Date");
+            ui.label(tx.date.to_string());
+            ui.end_row();
+            if let Some(payee) = &tx.payee {
+                ui.label("Payee");
+                ui.label(payee);
+                ui.end_row();
+            }
+            if !tx.tags.is_empty() {
+                ui.label("Tags");
+                ui.label(tx.tags.join(", "));
+                ui.end_row();
+            }
+            if let Some(status) = tx.status {
+                ui.label("Status");
+                ui.label(match status {
+                    TransactionStatus::Cleared => "cleared",
+                    TransactionStatus::Pending => "pending",
+                });
+                ui.end_row();
+            }
+            ui.label("Id");
+            ui.weak(&tx.id);
+            ui.end_row();
+        });
+
+        ui.separator();
+        ui.strong("Postings");
+        egui::Grid::new("tx_detail_postings")
+            .striped(true)
+            .num_columns(2)
+            .show(ui, |ui| {
+                for p in &tx.postings {
+                    let name = accounts
+                        .iter()
+                        .find(|a| p.account_id.as_deref() == Some(a.id.as_str()))
+                        .map(|a| a.name.clone())
+                        .or_else(|| p.account_name.clone())
+                        .or_else(|| p.account_id.clone())
+                        .unwrap_or_default();
+                    ui.vertical(|ui| {
+                        ui.label(name);
+                        if let Some(memo) = &p.memo {
+                            ui.weak(memo);
+                        }
+                    });
+                    let mut amount = format!("{} {}", p.amount, p.currency);
+                    if let Some(price) = &p.price {
+                        amount.push_str(&format!(" @ {} {}", price.value, price.currency));
+                    }
+                    ui.monospace(amount);
+                    ui.end_row();
+                }
+            });
+
+        if let Some(comment) = &tx.comment {
+            ui.separator();
+            ui.label(comment);
+        }
+    }
+
+    fn account_detail(&mut self, ui: &mut egui::Ui, id: &str) {
+        let Some(books) = &self.books else {
+            ui.spinner();
             return;
         };
+        let Some(account) = books.accounts.iter().find(|a| a.id == id) else {
+            ui.weak("Nothing selected.");
+            return;
+        };
+        let balance = balances(&books.accounts, &books.postings)
+            .get(&account.id)
+            .map(format_amounts)
+            .unwrap_or_default();
+        let mut edit_tags = None;
+        ui.heading(&account.name);
+        egui::Grid::new("account_detail")
+            .num_columns(2)
+            .show(ui, |ui| {
+                ui.label("Type");
+                ui.label(form::type_name(account.account_type));
+                ui.end_row();
+                ui.label("Balance");
+                ui.monospace(if balance.is_empty() { "0" } else { &balance });
+                ui.end_row();
+                ui.label("Currencies");
+                ui.label(if account.currencies.is_empty() {
+                    "any".to_owned()
+                } else {
+                    account.currencies.join(", ")
+                });
+                ui.end_row();
+                ui.label("Opened");
+                ui.label(account.opened_at.to_string());
+                ui.end_row();
+                if let Some(closed) = account.closed_at {
+                    ui.label("Closed");
+                    ui.label(closed.to_string());
+                    ui.end_row();
+                }
+                ui.label("Default tags");
+                ui.horizontal(|ui| {
+                    ui.label(if account.default_tags.is_empty() {
+                        "none".to_owned()
+                    } else {
+                        account.default_tags.join(", ")
+                    });
+                    if ui.small_button("Edit tags").clicked() {
+                        edit_tags = Some(TagsForm::new(account));
+                    }
+                });
+                ui.end_row();
+                ui.label("Id");
+                ui.weak(&account.id);
+                ui.end_row();
+            });
+        if let Some(description) = &account.description {
+            ui.separator();
+            ui.label(description);
+        }
+        if let Some(form) = edit_tags {
+            self.editor = Some(Editor::Tags(form));
+            self.form_error = None;
+        }
+    }
+
+    /// The open form, with its Record (or Save) and Cancel.
+    fn form_ui(&mut self, ui: &mut egui::Ui, side: &mut Side) {
         let accounts: Vec<Account> = self
             .books
             .as_ref()
@@ -451,245 +700,52 @@ impl LedgerView {
                 accounts
             })
             .unwrap_or_default();
-        let mut open = true;
-        let mut submit = false;
-        egui::Window::new("New transaction")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(true)
-            .default_width(620.0)
-            .show(ctx, |ui| {
-                egui::Grid::new("tx_fields").num_columns(2).show(ui, |ui| {
-                    ui.label("Date");
-                    ui.add(egui::TextEdit::singleline(&mut form.date).hint_text("YYYY-MM-DD"));
-                    ui.end_row();
-                    ui.label("Narration");
-                    ui.add(egui::TextEdit::singleline(&mut form.narration).desired_width(360.0));
-                    ui.end_row();
-                    ui.label("Payee");
-                    ui.text_edit_singleline(&mut form.payee);
-                    ui.end_row();
-                    ui.label("Tags");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut form.tags).hint_text("comma, separated"),
-                    );
-                    ui.end_row();
-                    ui.label("Status");
-                    egui::ComboBox::from_id_salt("tx_status")
-                        .selected_text(form.status.label())
-                        .show_ui(ui, |ui| {
-                            for s in Status::ALL {
-                                ui.selectable_value(&mut form.status, s, s.label());
-                            }
-                        });
-                    ui.end_row();
-                    ui.label("Comment");
-                    ui.add(
-                        egui::TextEdit::multiline(&mut form.comment)
-                            .desired_rows(3)
-                            .desired_width(360.0)
-                            .hint_text("Markdown"),
-                    );
-                    ui.end_row();
-                });
-
-                ui.separator();
-                ui.strong("Postings");
-                let mut remove = None;
-                // Default tags of the accounts chosen this frame.
-                let mut picked: Vec<Vec<String>> = vec![];
-                egui::Grid::new("tx_postings")
-                    .num_columns(5)
-                    .show(ui, |ui| {
-                        for (i, row) in form.postings.iter_mut().enumerate() {
-                            if let Some(a) = posting_row(ui, i, row, &accounts) {
-                                picked.push(a.default_tags.clone());
-                            }
-                            if ui
-                                .add_enabled(i >= 2, egui::Button::new("×"))
-                                .on_hover_text("Remove this posting")
-                                .clicked()
-                            {
-                                remove = Some(i);
-                            }
-                            ui.end_row();
-                        }
-                    });
-                for tags in picked {
-                    form.add_tags(&tags);
-                }
-                if let Some(i) = remove {
-                    form.postings.remove(i);
-                }
-                ui.horizontal(|ui| {
-                    if ui.button("Add posting").clicked() {
-                        let currency = form
-                            .postings
-                            .last()
-                            .map(|r| r.currency.clone())
-                            .unwrap_or_default();
-                        form.postings.push(PostingRow {
-                            currency,
-                            ..PostingRow::default()
-                        });
-                    }
-                    if ui
-                        .button("Balance last")
-                        .on_hover_text("Fill the last amount so its currency sums to zero")
-                        .clicked()
-                        && let Some(amount) = form.balancing_amount()
-                        && let Some(last) = form.postings.last_mut()
-                    {
-                        last.amount = amount.to_string();
-                    }
-                });
-                match form.imbalance() {
-                    Ok(off) if off.is_empty() => {
-                        ui.label("Balanced.");
-                    }
-                    Ok(off) => {
-                        ui.colored_label(
-                            ui.visuals().warn_fg_color,
-                            format!("Off by {}", format_amounts(&off)),
-                        );
-                    }
-                    Err(e) => {
-                        ui.colored_label(ui.visuals().warn_fg_color, e);
-                    }
-                }
-
-                ui.separator();
-                if let Some(e) = &self.form_error {
-                    ui.colored_label(ui.visuals().error_fg_color, e);
-                }
-                ui.horizontal(|ui| {
-                    submit = ui
-                        .add_enabled(!self.sending, egui::Button::new("Record"))
-                        .clicked();
-                    if self.sending {
-                        ui.spinner();
-                    }
-                });
-            });
-        if !open {
-            self.tx_form = None;
-            self.form_error = None;
-        } else if submit {
-            self.send_transaction();
-        }
-    }
-
-    fn account_window(&mut self, ctx: &egui::Context) {
-        let Some(form) = &mut self.account_form else {
-            return;
-        };
-        let mut open = true;
-        let mut submit = false;
-        egui::Window::new("New account")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                egui::Grid::new("account_fields")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        ui.label("Name");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut form.name)
-                                .hint_text("Expenses:Food")
-                                .desired_width(280.0),
-                        );
-                        ui.end_row();
-                        ui.label("Type");
-                        egui::ComboBox::from_id_salt("account_type")
-                            .selected_text(form::type_name(form.account_type))
-                            .show_ui(ui, |ui| {
-                                for ty in form::ACCOUNT_TYPES {
-                                    ui.selectable_value(
-                                        &mut form.account_type,
-                                        ty,
-                                        form::type_name(ty),
-                                    );
-                                }
-                            });
-                        ui.end_row();
-                        ui.label("Currencies");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut form.currencies)
-                                .hint_text("empty allows any; JPY, USD"),
-                        );
-                        ui.end_row();
-                        ui.label("Default tags");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut form.default_tags).hint_text("living"),
-                        );
-                        ui.end_row();
-                        ui.label("Opened");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut form.opened_at).hint_text("YYYY-MM-DD"),
-                        );
-                        ui.end_row();
-                        ui.label("Description");
-                        ui.add(
-                            egui::TextEdit::multiline(&mut form.description)
-                                .desired_rows(3)
-                                .hint_text("Markdown"),
-                        );
-                        ui.end_row();
-                    });
-                ui.separator();
-                if let Some(e) = &self.form_error {
-                    ui.colored_label(ui.visuals().error_fg_color, e);
-                }
-                ui.horizontal(|ui| {
-                    submit = ui
-                        .add_enabled(!self.sending, egui::Button::new("Create"))
-                        .clicked();
-                    if self.sending {
-                        ui.spinner();
-                    }
-                });
-            });
-        if !open {
-            self.account_form = None;
-            self.form_error = None;
-        } else if submit {
-            self.send_account();
-        }
-    }
-
-    fn tags_window(&mut self, ctx: &egui::Context) {
-        let Some(form) = &mut self.tags_form else {
-            return;
-        };
-        let mut open = true;
-        let mut submit = false;
-        egui::Window::new("Default tags")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
+        let (submit_label, sent) = match &mut self.editor {
+            Some(Editor::Transaction(form)) => {
+                ui.heading("New transaction");
+                tx_fields(ui, form, &accounts);
+                ("Record", Sent::Transaction)
+            }
+            Some(Editor::Account(form)) => {
+                ui.heading("New account");
+                account_fields(ui, form);
+                ("Create", Sent::Account)
+            }
+            Some(Editor::Tags(form)) => {
+                ui.heading("Default tags");
                 ui.label(&form.account_name);
                 ui.add(egui::TextEdit::singleline(&mut form.tags).hint_text("living, food"));
                 ui.weak("Copied into each transaction recorded against this account from now on.");
-                ui.separator();
-                if let Some(e) = &self.form_error {
-                    ui.colored_label(ui.visuals().error_fg_color, e);
-                }
-                ui.horizontal(|ui| {
-                    submit = ui
-                        .add_enabled(!self.sending, egui::Button::new("Save"))
-                        .clicked();
-                    if self.sending {
-                        ui.spinner();
-                    }
-                });
-            });
-        if !open {
-            self.tags_form = None;
-            self.form_error = None;
+                ("Save", Sent::Tags)
+            }
+            None => return,
+        };
+
+        ui.separator();
+        if let Some(e) = &self.form_error {
+            ui.colored_label(ui.visuals().error_fg_color, e);
+        }
+        let mut submit = false;
+        let mut cancel = false;
+        ui.horizontal(|ui| {
+            submit = ui
+                .add_enabled(!self.sending, egui::Button::new(submit_label))
+                .clicked();
+            cancel = ui
+                .add_enabled(!self.sending, egui::Button::new("Cancel"))
+                .clicked();
+            if self.sending {
+                ui.spinner();
+            }
+        });
+        if cancel {
+            self.cancel_editor(side);
         } else if submit {
-            self.send_tags();
+            match sent {
+                Sent::Transaction => self.send_transaction(),
+                Sent::Account => self.send_account(),
+                Sent::Tags => self.send_tags(),
+            }
         }
     }
 
@@ -716,6 +772,142 @@ impl LedgerView {
             .max_by_key(|(_, n)| *n)
             .map_or_else(|| "JPY".to_owned(), |(c, _)| c.to_owned())
     }
+}
+
+/// A new transaction's fields and postings.
+fn tx_fields(ui: &mut egui::Ui, form: &mut TxForm, accounts: &[Account]) {
+    egui::Grid::new("tx_fields").num_columns(2).show(ui, |ui| {
+        ui.label("Date");
+        ui.add(egui::TextEdit::singleline(&mut form.date).hint_text("YYYY-MM-DD"));
+        ui.end_row();
+        ui.label("Narration");
+        ui.text_edit_singleline(&mut form.narration);
+        ui.end_row();
+        ui.label("Payee");
+        ui.text_edit_singleline(&mut form.payee);
+        ui.end_row();
+        ui.label("Tags");
+        ui.add(egui::TextEdit::singleline(&mut form.tags).hint_text("comma, separated"));
+        ui.end_row();
+        ui.label("Status");
+        egui::ComboBox::from_id_salt("tx_status")
+            .selected_text(form.status.label())
+            .show_ui(ui, |ui| {
+                for s in Status::ALL {
+                    ui.selectable_value(&mut form.status, s, s.label());
+                }
+            });
+        ui.end_row();
+        ui.label("Comment");
+        ui.add(
+            egui::TextEdit::multiline(&mut form.comment)
+                .desired_rows(3)
+                .hint_text("Markdown"),
+        );
+        ui.end_row();
+    });
+
+    ui.separator();
+    ui.strong("Postings");
+    let mut remove = None;
+    // Default tags of the accounts chosen this frame.
+    let mut picked: Vec<Vec<String>> = vec![];
+    for (i, row) in form.postings.iter_mut().enumerate() {
+        // Each posting wraps onto a second line when the pane is narrow.
+        ui.horizontal_wrapped(|ui| {
+            if let Some(a) = posting_row(ui, i, row, accounts) {
+                picked.push(a.default_tags.clone());
+            }
+            if ui
+                .add_enabled(i >= 2, egui::Button::new("×"))
+                .on_hover_text("Remove this posting")
+                .clicked()
+            {
+                remove = Some(i);
+            }
+        });
+    }
+    for tags in picked {
+        form.add_tags(&tags);
+    }
+    if let Some(i) = remove {
+        form.postings.remove(i);
+    }
+    ui.horizontal(|ui| {
+        if ui.button("Add posting").clicked() {
+            let currency = form
+                .postings
+                .last()
+                .map(|r| r.currency.clone())
+                .unwrap_or_default();
+            form.postings.push(PostingRow {
+                currency,
+                ..PostingRow::default()
+            });
+        }
+        if ui
+            .button("Balance last")
+            .on_hover_text("Fill the last amount so its currency sums to zero")
+            .clicked()
+            && let Some(amount) = form.balancing_amount()
+            && let Some(last) = form.postings.last_mut()
+        {
+            last.amount = amount.to_string();
+        }
+    });
+    match form.imbalance() {
+        Ok(off) if off.is_empty() => {
+            ui.label("Balanced.");
+        }
+        Ok(off) => {
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                format!("Off by {}", format_amounts(&off)),
+            );
+        }
+        Err(e) => {
+            ui.colored_label(ui.visuals().warn_fg_color, e);
+        }
+    }
+}
+
+/// A new account's fields.
+fn account_fields(ui: &mut egui::Ui, form: &mut AccountForm) {
+    egui::Grid::new("account_fields")
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.label("Name");
+            ui.add(egui::TextEdit::singleline(&mut form.name).hint_text("Expenses:Food"));
+            ui.end_row();
+            ui.label("Type");
+            egui::ComboBox::from_id_salt("account_type")
+                .selected_text(form::type_name(form.account_type))
+                .show_ui(ui, |ui| {
+                    for ty in form::ACCOUNT_TYPES {
+                        ui.selectable_value(&mut form.account_type, ty, form::type_name(ty));
+                    }
+                });
+            ui.end_row();
+            ui.label("Currencies");
+            ui.add(
+                egui::TextEdit::singleline(&mut form.currencies)
+                    .hint_text("empty allows any; JPY, USD"),
+            );
+            ui.end_row();
+            ui.label("Default tags");
+            ui.add(egui::TextEdit::singleline(&mut form.default_tags).hint_text("living"));
+            ui.end_row();
+            ui.label("Opened");
+            ui.add(egui::TextEdit::singleline(&mut form.opened_at).hint_text("YYYY-MM-DD"));
+            ui.end_row();
+            ui.label("Description");
+            ui.add(
+                egui::TextEdit::multiline(&mut form.description)
+                    .desired_rows(3)
+                    .hint_text("Markdown"),
+            );
+            ui.end_row();
+        });
 }
 
 /// One posting's fields; returns the account newly chosen this frame.
@@ -759,6 +951,14 @@ fn posting_row<'a>(
             .desired_width(140.0),
     );
     chosen
+}
+
+/// Whether the books still hold what `pick` names.
+fn still_there(pick: &Pick, books: &Books) -> bool {
+    match pick {
+        Pick::Transaction(id) => books.postings.iter().any(|p| &p.transaction_id == id),
+        Pick::Account(id) => books.accounts.iter().any(|a| &a.id == id),
+    }
 }
 
 // ── pure helpers ────────────────────────────────────────────────────────────
@@ -909,5 +1109,106 @@ mod tests {
             running_balances(&refs),
             [Decimal::from(100), Decimal::from(5), Decimal::from(70)]
         );
+    }
+
+    fn view() -> (tokio::runtime::Runtime, LedgerView) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let endpoint = sapphire_framework::ipc::Endpoint::in_dir(
+            "test",
+            std::env::temp_dir().join("ledger-test"),
+        );
+        let client = Arc::new(LedgerClient::new("test", "0.0.0", endpoint));
+        let view = LedgerView::new(runtime.handle().clone(), client, Arc::new(|| {}));
+        (runtime, view)
+    }
+
+    fn books(accounts: Vec<Account>, postings: Vec<PostingHit>) -> Books {
+        Books {
+            accounts,
+            postings,
+            issues: vec![],
+        }
+    }
+
+    #[test]
+    fn a_pick_lasts_while_the_books_hold_it() {
+        let b = books(
+            vec![account("a", "Assets:Cash")],
+            vec![hit(Some("a"), None, "1", "JPY")],
+        );
+        assert!(still_there(&Pick::Account("a".into()), &b));
+        assert!(!still_there(&Pick::Account("b".into()), &b));
+        assert!(still_there(&Pick::Transaction("tx00001".into()), &b));
+        assert!(!still_there(&Pick::Transaction("tx00002".into()), &b));
+    }
+
+    #[test]
+    fn a_refresh_drops_a_vanished_pick() {
+        let (_rt, mut view) = view();
+        view.picked = Some(Pick::Transaction("tx00002".into()));
+        view.replies
+            .0
+            .send(Reply::Books(Ok(books(
+                vec![account("a", "Assets:Cash")],
+                vec![hit(Some("a"), None, "1", "JPY")],
+            ))))
+            .unwrap();
+        assert!(!view.drain_replies());
+        assert_eq!(view.picked, None);
+    }
+
+    #[test]
+    fn a_reply_for_another_transaction_is_dropped() {
+        let (_rt, mut view) = view();
+        view.picked = Some(Pick::Transaction("tx00001".into()));
+        view.replies
+            .0
+            .send(Reply::Transaction("tx00002".into(), Err("gone".into())))
+            .unwrap();
+        view.drain_replies();
+        assert!(view.transaction.is_none());
+        view.replies
+            .0
+            .send(Reply::Transaction("tx00001".into(), Err("gone".into())))
+            .unwrap();
+        view.drain_replies();
+        assert!(view.transaction.is_some());
+    }
+
+    #[test]
+    fn a_new_record_closes_the_pane_and_new_tags_return_to_the_account() {
+        let (_rt, mut view) = view();
+        view.editor = Some(Editor::Transaction(TxForm::new("2026-10-28".into(), "JPY")));
+        view.replies
+            .0
+            .send(Reply::Written(Sent::Transaction, Ok("recorded".into())))
+            .unwrap();
+        assert!(view.drain_replies());
+        assert!(view.editor.is_none());
+
+        view.picked = Some(Pick::Account("a".into()));
+        view.editor = Some(Editor::Tags(TagsForm::new(&account("a", "Assets:Cash"))));
+        view.replies
+            .0
+            .send(Reply::Written(Sent::Tags, Ok("updated".into())))
+            .unwrap();
+        assert!(!view.drain_replies());
+        assert!(view.editor.is_none());
+        assert_eq!(view.picked, Some(Pick::Account("a".into())));
+    }
+
+    #[test]
+    fn a_refused_write_keeps_the_form() {
+        let (_rt, mut view) = view();
+        view.editor = Some(Editor::Account(AccountForm::new("2026-10-28".into())));
+        view.replies
+            .0
+            .send(Reply::Written(Sent::Account, Err("taken".into())))
+            .unwrap();
+        assert!(!view.drain_replies());
+        assert!(matches!(view.editor, Some(Editor::Account(_))));
+        assert_eq!(view.form_error.as_deref(), Some("taken"));
     }
 }
