@@ -25,9 +25,9 @@ use std::sync::{Arc, Mutex};
 
 use sapphire_framework::ipc::ManagedBy;
 use sapphire_framework::server::{
-    AppFiles, AppServer, AppSettings, BridgeConnector, FieldError, HttpConfig, SERVER_CONFIG_FILE,
-    ServerConfig, SettingDef, Settings, Staged, StatusRow, SyncRuntime, WorkspaceHost,
-    serve_restarting,
+    AppFiles, AppServer, AppSettings, BridgeConnector, FieldError, HttpConfig, ReleaseSource,
+    SERVER_CONFIG_FILE, ServerConfig, SettingDef, Settings, Staged, StatusRow, SyncRuntime,
+    WorkspaceHost, serve_restarting,
 };
 use sapphire_ledger_core::{LEDGER_CTX, LedgerState};
 
@@ -47,6 +47,7 @@ pub const DEFAULT_HTTP_ADDR: &str = "127.0.0.1:3173";
 /// The rest talk to that server over IPC without building anything.
 pub fn build_oneshot() -> AppServer {
     AppServer::new(&LEDGER_CTX, VERSION)
+        .releases(release_source())
         .app_api(sapphire_ledger_api::API_VERSION)
         .mcp(sapphire_ledger_mcp::service())
 }
@@ -237,4 +238,12 @@ pub async fn run() -> anyhow::Result<()> {
     .await;
     watch.abort();
     Ok(result?)
+}
+
+/// Where the app's releases are published: what `update` installs from, and where the
+/// server looks once a day for a newer one.
+fn release_source() -> ReleaseSource {
+    ReleaseSource::github("sapphire-turtle", "sapphire-ledger")
+        .asset("sapphire-ledger")
+        .cargo_crate("sapphire-ledger")
 }
