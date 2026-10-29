@@ -1,13 +1,18 @@
 //! sapphire-ledger's desktop app: the books on the framework's shell, with
-//! its Settings.
+//! its Settings — and, given a subcommand, the CLI.
 //!
-//! A pure client, like sapphire-sync's: it talks to the service-managed
-//! `sapphire-ledger serve` over IPC, which relays what the bridge has to
-//! say, and never starts either itself. The Ledger screen calls the server's `sapphire-ledger.*`
-//! methods, so it shows the workspace the server has selected; the Charts
-//! screen draws the workspace's panels from `run_panel`; Settings, at the
-//! rail's foot, picks that workspace and manages the workgroup. Closing the
-//! window stops nothing.
+//! This one binary is a superset of the CLI's: bare, it opens the window;
+//! with `serve`, `mcp`, `tx`, `status`, … it runs the CLI's own code
+//! (`sapphire_ledger_cli::run`), so the service manager and MCP clients can
+//! start it as they start `sapphire-ledger`.
+//!
+//! The window is a pure client, like sapphire-sync's: it talks to the
+//! service-managed `sapphire-ledger serve` over IPC, which relays what the
+//! bridge has to say, and never starts either itself. The Ledger screen calls
+//! the server's `sapphire-ledger.*` methods, so it shows the workspace the
+//! server has selected; the Charts screen draws the workspace's panels from
+//! `run_panel`; Settings, at the rail's foot, picks that workspace and manages
+//! the workgroup. Closing the window stops nothing.
 
 mod charts;
 mod client;
@@ -16,9 +21,11 @@ mod ledger;
 
 use std::sync::Arc;
 
+use clap::Parser;
 use sapphire_framework::gui::app::{AppOptions, AppSetup};
 use sapphire_framework::gui::client::AppIdentity;
 use sapphire_framework::gui::{Destination, Settings, Shell, ShellApp, Side, eframe, egui};
+use sapphire_ledger_cli::cli::{Command, GlobalArgs};
 
 use crate::charts::ChartsView;
 use crate::client::LedgerClient;
@@ -75,7 +82,30 @@ impl eframe::App for App {
     }
 }
 
-fn main() -> eframe::Result<()> {
+/// The CLI's command line, with the subcommand optional: none opens the window.
+#[derive(Parser)]
+#[command(
+    name = "sapphire-ledger",
+    about = "Local-first double-entry household ledger: the desktop app, or the CLI's commands",
+    version
+)]
+struct DesktopCli {
+    #[command(flatten)]
+    global: GlobalArgs,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+fn main() -> anyhow::Result<()> {
+    let cli = DesktopCli::parse();
+    match cli.command {
+        Some(command) => sapphire_ledger_cli::run(command, cli.global),
+        None => Ok(window()?),
+    }
+}
+
+fn window() -> eframe::Result<()> {
     sapphire_framework::gui::app::run(
         AppOptions::new(APP, "Sapphire Ledger")
             .inner_size([1000.0, 640.0])

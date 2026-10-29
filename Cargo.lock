@@ -5127,26 +5127,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sapphire-ledger"
-version = "0.2.1"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "rust_decimal",
- "sapphire-framework",
- "sapphire-ledger-api",
- "sapphire-ledger-core",
- "sapphire-ledger-mcp",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "toml",
- "tracing",
-]
-
-[[package]]
 name = "sapphire-ledger-api"
 version = "2.1.0"
 dependencies = [
@@ -5156,6 +5136,20 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "sapphire-ledger-cli"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "sapphire-framework",
+ "sapphire-ledger-core",
+ "sapphire-ledger-server",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -5175,20 +5169,33 @@ dependencies = [
 
 [[package]]
 name = "sapphire-ledger-desktop"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
+ "anyhow",
  "chrono",
+ "clap",
  "egui_plot",
  "rust_decimal",
  "sapphire-framework",
- "sapphire-ledger",
  "sapphire-ledger-api",
+ "sapphire-ledger-cli",
  "sapphire-ledger-core",
+ "sapphire-ledger-server",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "sapphire-ledger-headless"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "sapphire-ledger-cli",
+ "tempfile",
 ]
 
 [[package]]
@@ -5207,6 +5214,23 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sapphire-ledger-server"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "sapphire-framework",
+ "sapphire-ledger-api",
+ "sapphire-ledger-core",
+ "sapphire-ledger-mcp",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml",
  "tracing",
 ]
 

@@ -1,6 +1,8 @@
 [package]
 name = "sapphire-ledger-desktop"
-version = "0.2.1"
+# Released together with `sapphire-ledger-headless`, under its `v{version}`
+# tags (release-plz.toml).
+version = "0.3.0"
 edition.workspace = true
 description = "Desktop GUI for sapphire-ledger"
 license-file = "LICENSE"
@@ -8,11 +10,14 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+# Every command but the window — `serve`, `mcp`, `tx`, `status`, … — runs the
+# CLI's own code, so this one binary does all the CLI does.
+sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.3.0" }
 # `eframe`: `gui::app::run` starts the window, and `gui::{eframe, egui}` are the
 # versions it renders with.
 sapphire-framework = { workspace = true, features = ["eframe", "ipc"] }
 # The ledger's methods, their parameters and the records they answer with.
-# Nothing of the files: the desktop reads nothing from disk.
+# Nothing of the files: the window reads nothing from disk.
 sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "2.1.0" }
 # Plots for the Charts screen; 0.38 renders with egui 0.37, the framework's.
 egui_plot = "0.38"
@@ -22,10 +27,12 @@ serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 tracing.workspace = true
+anyhow.workspace = true
+clap.workspace = true
 
 [dev-dependencies]
-# The real server, for the client test: `serve::build()`.
-sapphire-ledger = { path = "../cli", default-features = false }
+# The real server, for the client test: `sapphire_ledger_server::build()`.
+sapphire-ledger-server = { path = "../crates/sapphire-ledger-server", default-features = false }
 sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3.0", default-features = false }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "time"] }
@@ -33,20 +40,21 @@ tokio = { workspace = true, features = ["macros", "time"] }
 # `cargo binstall --git https://github.com/sapphire-turtle/sapphire-ledger sapphire-ledger-desktop`
 # downloads the release file instead of building it (this crate is not on crates.io), following
 # sapphire-turtle/.github's README.md#conventions: the files are bare binaries named
-# `<binary>-<os>-<arch>`, so each release platform names its own. quick-install is a third
-# party's build: only this repository's files, or a build from source, are installed.
+# `<binary>-<os>-<arch>`, so each release platform names its own; they sit in the `v{version}`
+# release the headless edition makes. quick-install is a third party's build: only this
+# repository's files, or a build from source, are installed.
 [package.metadata.binstall]
 pkg-fmt = "bin"
 disabled-strategies = ["quick-install"]
 
 [package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
-pkg-url = "{ repo }/releases/download/desktop-v{ version }/{ name }-linux-x86_64"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-linux-x86_64"
 
 [package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
-pkg-url = "{ repo }/releases/download/desktop-v{ version }/{ name }-linux-aarch64"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-linux-aarch64"
 
 [package.metadata.binstall.overrides.aarch64-apple-darwin]
-pkg-url = "{ repo }/releases/download/desktop-v{ version }/{ name }-macos-aarch64"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-macos-aarch64"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-url = "{ repo }/releases/download/desktop-v{ version }/{ name }-windows-x86_64.exe"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-windows-x86_64.exe"

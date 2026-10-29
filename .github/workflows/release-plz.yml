@@ -1,8 +1,9 @@
 name: Release-plz
 
-# The CLI (`sapphire-ledger`) is tagged `v{version}`, the desktop app
-# `desktop-v{version}` (release-plz.toml). Each gets its binaries built once
-# release-plz has made its release.
+# The headless edition (`sapphire-ledger-headless`) and the desktop app share
+# one version and its `v{version}` tag, which the headless one makes
+# (release-plz.toml). Both binaries are built once release-plz has made the
+# release.
 on:
   push:
     branches:
@@ -21,26 +22,16 @@ jobs:
       pull-requests: write
     uses: sapphire-turtle/.github/.github/workflows/release-plz.yml@v1
     with:
-      # `cargo publish` builds the CLI, whose rustls pulls aws-lc-sys (cmake).
+      # `cargo publish` builds the headless edition and the CLI and server
+      # libraries, whose rustls pulls aws-lc-sys (cmake).
       linux-packages: cmake
     secrets: inherit
 
-  build-cli:
+  build:
     needs: release-plz
-    if: contains(fromJSON(needs.release-plz.outputs.packages), 'sapphire-ledger')
+    if: contains(fromJSON(needs.release-plz.outputs.packages), 'sapphire-ledger-headless')
     permissions:
       contents: write
     uses: ./.github/workflows/release-binaries.yml
     with:
-      tag: ${{ fromJSON(needs.release-plz.outputs.tags)['sapphire-ledger'] }}
-      target: cli
-
-  build-desktop:
-    needs: release-plz
-    if: contains(fromJSON(needs.release-plz.outputs.packages), 'sapphire-ledger-desktop')
-    permissions:
-      contents: write
-    uses: ./.github/workflows/release-binaries.yml
-    with:
-      tag: ${{ fromJSON(needs.release-plz.outputs.tags)['sapphire-ledger-desktop'] }}
-      target: desktop
+      tag: ${{ fromJSON(needs.release-plz.outputs.tags)['sapphire-ledger-headless'] }}

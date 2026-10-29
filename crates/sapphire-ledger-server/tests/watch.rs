@@ -1,4 +1,4 @@
-use sapphire_ledger::watch;
+use sapphire_ledger_server::watch;
 
 /// Two transactions with one id, in different months -- the shape the sync
 /// model actually produces, since the path embeds the record's own date.
