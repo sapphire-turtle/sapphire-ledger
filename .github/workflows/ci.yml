@@ -5,7 +5,7 @@ on:
 
 jobs:
   ci:
-    uses: sapphire-turtle/sapphire-framework/.github/workflows/shared-rust-ci.yml@main
+    uses: sapphire-turtle/.github/.github/workflows/rust-ci.yml@v1
     with:
       # sapphire-ledger-desktop pulls eframe -> winit, which needs xkbcommon
       # plus the X11 and Wayland client libraries even to build. cmake is for
