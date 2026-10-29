@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/sapphire-turtle/sapphire-ledger/compare/desktop-v0.2.1...desktop-v0.2.2) - 2026-10-29
+
+### Added
+
+- *(desktop)* the Ledger's picked transaction or account, and its forms, in the side pane
+
+### Other
+
+- call the shared workflows from sapphire-turtle/.github@v1
+
 ## [0.2.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/desktop-v0.2.0...desktop-v0.2.1) - 2026-10-25
 
 ### Other

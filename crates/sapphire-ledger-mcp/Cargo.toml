@@ -1,6 +1,6 @@
 [package]
 name = "sapphire-ledger-mcp"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
 description = "MCP tools for sapphire-ledger: the ledger's methods on its app server, and the tools that call them"
 license.workspace = true
@@ -14,7 +14,7 @@ redb-store = ["sapphire-ledger-core/redb-store"]
 
 [dependencies]
 sapphire-ledger-api = { path = "../sapphire-ledger-api", version = "2.1.0" }
-sapphire-ledger-core = { path = "../sapphire-ledger-core", version = "0.3.0", default-features = false }
+sapphire-ledger-core = { path = "../sapphire-ledger-core", version = "0.3.1", default-features = false }
 sapphire-framework = { workspace = true, features = ["ipc", "mcp"] }
 rmcp.workspace = true
 tokio = { workspace = true, features = ["rt"] }
