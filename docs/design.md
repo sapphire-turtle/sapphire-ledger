@@ -593,9 +593,11 @@ non-goal here, not a stopgap for a slow walk that hasn't been measured yet.
 
 ```
 sapphire-ledger/
-├── cli/                     # `sapphire-ledger`, the one binary: CLI, app server, `mcp`
-├── desktop/                 # egui GUI: a client of the app server
+├── headless/                # `sapphire-ledger-headless`: the `sapphire-ledger` binary without the GUI
+├── desktop/                 # egui GUI, a client of the app server; its binary runs the same commands
 └── crates/
+    ├── sapphire-ledger-cli/    # the command line both editions run
+    ├── sapphire-ledger-server/ # the app server (`sapphire-ledger serve`) and its duplicate-id watch
     ├── sapphire-ledger-api/   # the server's methods, their parameters and results — what a client links
     ├── sapphire-ledger-core/  # data model, record I/O, migration, validation, write path
     └── sapphire-ledger-mcp/   # the ledger's MCP tools and server methods — LIBRARY only
@@ -694,9 +696,10 @@ init` and `workspace select` it.
 
 ### Server: `sapphire-ledger serve`
 
-**Built.** Since #19 there is one binary. `sapphire-ledger serve` — or a bare
-`sapphire-ledger`, which is the same thing and what an installed service
-runs — is the ledger's
+**Built.** Since #19 there is one command, `sapphire-ledger`, which both
+editions (the headless one and the desktop app, #62) put on PATH.
+`sapphire-ledger serve` — what an installed service runs, from the
+`sapphire-ledger-server` library — is the ledger's
 [sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)
 app server: the framework's `AppServer` (IPC socket, the current workspace,
 signals, `<data dir>/logs/app.log`) plus what is the ledger's own — sync
@@ -819,8 +822,9 @@ but no record schema has the field yet.
   unit tests pin the ledger's behaviour without a server.
 - `sapphire_ledger_mcp::service()` is the `McpService` handed to
   `AppServer::mcp`, building a `LedgerTools` per session.
-- `serve::build()` is the whole server minus the bridge, which the
-  integration test (`cli/tests/mcp_tools.rs`) runs and drives over IPC.
+- `sapphire_ledger_server::build()` is the whole server minus the bridge,
+  which the integration test (`crates/sapphire-ledger-server/tests/mcp_tools.rs`)
+  runs and drives over IPC.
 
 ## Licensing
 
@@ -828,7 +832,9 @@ but no record schema has the field yet.
 |---|---|
 | `sapphire-ledger-core` | MIT OR Apache-2.0 |
 | `sapphire-ledger-mcp`  | MIT OR Apache-2.0 |
-| `sapphire-ledger` (`cli/`) | MIT OR Apache-2.0 |
+| `sapphire-ledger-cli` | MIT OR Apache-2.0 |
+| `sapphire-ledger-server` | MIT OR Apache-2.0 |
+| `sapphire-ledger-headless` (`headless/`) | MIT OR Apache-2.0 |
 | `sapphire-ledger-desktop` | MIT OR Apache-2.0 (initial) |
 
 Permissive everywhere for MVP. If a desktop or mobile build is eventually

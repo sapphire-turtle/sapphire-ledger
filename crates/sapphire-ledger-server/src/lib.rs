@@ -1,9 +1,11 @@
-//! The app server: what `sapphire-ledger serve` (and a bare `sapphire-ledger`)
-//! runs.
+//! sapphire-ledger's app server: what `sapphire-ledger serve` runs, in either
+//! edition. A library, not a binary of its own: the server is set up with the
+//! same `sapphire-ledger` command that runs it (`sapphire-ledger-cli`), so
+//! there is no separate server command to tell from the client's.
 //!
 //! The framework's [`AppServer`] owns the IPC socket, the current workspace
 //! (`workspace init|select|show|move|remove`), signals and the log file.
-//! This module adds what is the ledger's own:
+//! This crate adds what is the ledger's own:
 //!
 //! - **sync**, through the host's `sapphire-bridge`. A bridge that is not
 //!   running is not fatal: the server serves its workspace without sync and
@@ -18,6 +20,8 @@
 //! [`run`] hands the framework [`build_serving`], which it calls again for each
 //! round with the settings read afresh.
 
+pub mod watch;
+
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -31,7 +35,7 @@ use sapphire_framework::server::{
 };
 use sapphire_ledger_core::{LEDGER_CTX, LedgerState};
 
-/// This binary's version, reported in every handshake.
+/// The editions' version, which this crate shares, reported in every handshake.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Where the HTTP listener binds unless `config.toml`'s `[http] listen` says

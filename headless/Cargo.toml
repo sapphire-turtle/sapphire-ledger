@@ -1,0 +1,47 @@
+[package]
+# The edition without the GUI, for headless hosts. Its binary is `sapphire-ledger`,
+# the one command both editions put on PATH; the desktop app is
+# `sapphire-ledger-desktop`, and runs the same commands.
+name = "sapphire-ledger-headless"
+version = "0.3.0"
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../README.md"
+categories = ["command-line-utilities", "finance"]
+keywords = ["accounting", "ledger", "double-entry", "cli", "mcp"]
+
+[[bin]]
+name = "sapphire-ledger"
+path = "src/main.rs"
+
+[dependencies]
+sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.3.0" }
+anyhow.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# `cargo binstall sapphire-ledger-headless` downloads the release file instead of building
+# it, following sapphire-turtle/.github's README.md#conventions: the files are bare binaries
+# named `<crate>-<os>-<arch>` — `sapphire-ledger-headless-…`, beside the desktop app's
+# `sapphire-ledger-desktop-…` — so each release platform names its own; binstall installs
+# it as the `sapphire-ledger` binary. quick-install is a third party's build: only this
+# repository's files, or a build from source, are installed.
+[package.metadata.binstall]
+pkg-fmt = "bin"
+disabled-strategies = ["quick-install"]
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-linux-x86_64"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-linux-aarch64"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-macos-aarch64"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-windows-x86_64.exe"

@@ -1,7 +1,8 @@
 name: Release binaries
 
-# Builds a binary for the four release platforms and attaches it to an existing
-# release. release-plz.yml calls it after a release; run it by hand to
+# Builds the headless edition's and the desktop app's binaries for the four release
+# platforms and attaches them to an existing `v{version}` release, which the
+# two share. release-plz.yml calls it after a release; run it by hand to
 # (re)upload the files for an existing tag.
 on:
   workflow_call:
@@ -9,35 +10,29 @@ on:
       tag:
         required: true
         type: string
-      target:
-        required: true
-        type: string
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing release tag to attach binaries to (e.g. v0.1.0 or desktop-v0.1.0).'
+        description: 'Existing release tag to attach binaries to (e.g. v0.3.0).'
         required: true
         type: string
-      target:
-        required: true
-        type: choice
-        options: [cli, desktop]
 
 jobs:
-  cli:
-    if: inputs.target == 'cli'
+  # Both binaries are `sapphire-ledger` on PATH; the files are named by crate
+  # to tell them apart.
+  headless:
     permissions:
       contents: write
     uses: sapphire-turtle/.github/.github/workflows/release-binary.yml@v1
     with:
       tag: ${{ inputs.tag }}
-      package: sapphire-ledger
+      package: sapphire-ledger-headless
       binary: sapphire-ledger
+      asset: sapphire-ledger-headless
       # rustls pulls aws-lc-sys, which builds with cmake.
       linux-packages: cmake
 
   desktop:
-    if: inputs.target == 'desktop'
     permissions:
       contents: write
     uses: sapphire-turtle/.github/.github/workflows/release-binary.yml@v1
@@ -46,7 +41,8 @@ jobs:
       package: sapphire-ledger-desktop
       binary: sapphire-ledger-desktop
       # eframe -> winit needs xkbcommon and the X11 and Wayland client
-      # libraries even to build.
+      # libraries even to build. cmake is for aws-lc-sys, which the CLI's
+      # rustls pulls in.
       linux-packages: >-
-        pkg-config libxkbcommon-dev libwayland-dev libx11-dev
+        pkg-config cmake libxkbcommon-dev libwayland-dev libx11-dev
         libxcursor-dev libxi-dev libxrandr-dev

@@ -1,12 +1,14 @@
 [workspace]
 members = [
-    "cli",
+    "headless",
     "crates/sapphire-ledger-api",
+    "crates/sapphire-ledger-cli",
     "crates/sapphire-ledger-core",
     "desktop",
     "crates/sapphire-ledger-mcp",
+    "crates/sapphire-ledger-server",
 ]
-default-members = ["cli"]
+default-members = ["headless"]
 resolver = "3"
 
 [workspace.package]

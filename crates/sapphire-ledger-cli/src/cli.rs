@@ -1,14 +1,16 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 pub use sapphire_framework::server::FrameworkCommand;
 
-/// The command line of the one binary this app ships.
+/// The command line of `sapphire-ledger`, the one command both editions put
+/// on PATH.
 ///
 /// The ledger's own verbs and the framework's sit side by side at the top
 /// level. A bare invocation prints the help; the service manager starts the
-/// binary with `serve`.
+/// binary with `serve`. The desktop app parses the same [`GlobalArgs`] and
+/// [`Command`], with the command optional: none opens its window.
 #[derive(Parser)]
 #[command(
     name = "sapphire-ledger",
@@ -17,6 +19,16 @@ pub use sapphire_framework::server::FrameworkCommand;
     version
 )]
 pub struct Cli {
+    #[command(flatten)]
+    pub global: GlobalArgs,
+
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+/// The options every command takes.
+#[derive(Args)]
+pub struct GlobalArgs {
     /// Path to the ledger root (the directory containing `.sapphire-ledger/`).
     /// Overrides the automatic upward search from the current directory.
     /// Can also be set via the SAPPHIRE_LEDGER_DIR environment variable.
@@ -25,9 +37,6 @@ pub struct Cli {
     /// server has selected (`workspace select`), and `mcp` works on that one.
     #[arg(long, env = "SAPPHIRE_LEDGER_DIR", global = true, value_name = "DIR")]
     pub ledger_dir: Option<PathBuf>,
-
-    #[command(subcommand)]
-    pub command: Command,
 }
 
 #[derive(Subcommand)]

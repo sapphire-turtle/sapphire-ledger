@@ -14,13 +14,13 @@ use sapphire_framework::backend::protocol as proto;
 use sapphire_framework::ipc::{self, ClientInfo, Endpoint};
 use sapphire_framework::mcp::ToolContext;
 use sapphire_framework::mcp::rmcp::handler::server::wrapper::Parameters;
-use sapphire_ledger::serve;
 use sapphire_ledger_api::{
     AddAccountParams, AddBudgetParams, AddTransactionParams, EmptyParams, PostingParam,
     QueryPostingsParams, RunPanelParams,
 };
 use sapphire_ledger_core::{AppKind, LEDGER_CTX};
 use sapphire_ledger_mcp::LedgerTools;
+use sapphire_ledger_server as serve;
 
 async fn wait_until_listening(endpoint: &Endpoint) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);

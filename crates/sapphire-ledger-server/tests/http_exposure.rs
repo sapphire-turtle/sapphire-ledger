@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use sapphire_ledger::serve;
+use sapphire_ledger_server as serve;
 
 fn addr(s: &str) -> SocketAddr {
     s.parse().expect("addr")

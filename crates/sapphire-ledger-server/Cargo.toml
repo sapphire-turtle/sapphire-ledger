@@ -1,0 +1,33 @@
+[package]
+name = "sapphire-ledger-server"
+edition.workspace = true
+# Released together with the editions that run it (release-plz.toml).
+version = "0.3.0"
+description = "sapphire-ledger's app server: the one process that serves the ledger, with its sync, MCP methods and duplicate-id watch"
+license.workspace = true
+repository.workspace = true
+categories = ["finance"]
+keywords = ["accounting", "ledger", "double-entry", "mcp"]
+
+[features]
+default = ["redb-store"]
+redb-store = [
+    "sapphire-ledger-core/redb-store",
+    "sapphire-ledger-mcp/redb-store",
+    "sapphire-framework/redb-store",
+]
+
+[dependencies]
+sapphire-ledger-api = { path = "../sapphire-ledger-api", version = "2.1.0" }
+sapphire-ledger-core = { path = "../sapphire-ledger-core", version = "0.3.0", default-features = false }
+sapphire-ledger-mcp = { path = "../sapphire-ledger-mcp", version = "0.2.1", default-features = false }
+sapphire-framework = { workspace = true, features = ["server", "ipc", "mcp"] }
+anyhow.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "time"] }
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true

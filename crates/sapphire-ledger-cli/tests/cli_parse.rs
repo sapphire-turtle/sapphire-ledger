@@ -2,7 +2,7 @@
 //! flat at the top level (#19).
 
 use clap::Parser as _;
-use sapphire_ledger::cli::{Cli, Command, FrameworkCommand};
+use sapphire_ledger_cli::cli::{Cli, Command, FrameworkCommand};
 
 fn parse(args: &[&str]) -> Cli {
     Cli::try_parse_from(std::iter::once("sapphire-ledger").chain(args.iter().copied()))
