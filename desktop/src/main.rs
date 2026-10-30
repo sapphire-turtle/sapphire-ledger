@@ -25,6 +25,7 @@ use clap::Parser;
 use sapphire_framework::gui::app::{AppOptions, AppSetup};
 use sapphire_framework::gui::client::AppIdentity;
 use sapphire_framework::gui::{Destination, Settings, Shell, ShellApp, Side, eframe, egui};
+use sapphire_ledger_cli::Edition;
 use sapphire_ledger_cli::cli::{Command, GlobalArgs};
 
 use crate::charts::ChartsView;
@@ -100,7 +101,7 @@ struct DesktopCli {
 fn main() -> anyhow::Result<()> {
     let cli = DesktopCli::parse();
     match cli.command {
-        Some(command) => sapphire_ledger_cli::run(command, cli.global),
+        Some(command) => sapphire_ledger_cli::run(command, cli.global, Edition::Desktop),
         None => Ok(window()?),
     }
 }
