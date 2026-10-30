@@ -4,9 +4,10 @@
 
 use anyhow::Result;
 use clap::Parser as _;
+use sapphire_ledger_cli::Edition;
 use sapphire_ledger_cli::cli::Cli;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    sapphire_ledger_cli::run(cli.command, cli.global)
+    sapphire_ledger_cli::run(cli.command, cli.global, Edition::Headless)
 }

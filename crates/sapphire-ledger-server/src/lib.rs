@@ -29,9 +29,9 @@ use std::sync::{Arc, Mutex};
 
 use sapphire_framework::ipc::ManagedBy;
 use sapphire_framework::server::{
-    AppFiles, AppServer, AppSettings, BridgeConnector, FieldError, HttpConfig, SERVER_CONFIG_FILE,
-    ServerConfig, SettingDef, Settings, Staged, StatusRow, SyncRuntime, WorkspaceHost,
-    serve_restarting,
+    AppFiles, AppServer, AppSettings, BridgeConnector, FieldError, HttpConfig, ReleaseSource,
+    SERVER_CONFIG_FILE, ServerConfig, SettingDef, Settings, Staged, StatusRow, SyncRuntime,
+    WorkspaceHost, serve_restarting,
 };
 use sapphire_ledger_core::{LEDGER_CTX, LedgerState};
 
@@ -42,15 +42,42 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// otherwise: loopback, on the port this app has used since #16.
 pub const DEFAULT_HTTP_ADDR: &str = "127.0.0.1:3173";
 
+/// Which edition runs the server: the release file `update` installs is the
+/// edition's own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edition {
+    /// `sapphire-ledger-headless`, the command line alone.
+    Headless,
+    /// `sapphire-ledger-desktop`, the desktop app.
+    Desktop,
+}
+
+impl Edition {
+    /// Where the edition's releases are published: what `update` installs
+    /// from, and where the server looks once a day for a newer one. Both are
+    /// in the shared `v{version}` release (release-binaries.yml), as
+    /// `<crate>-<os>-<arch>`; only the headless edition is on crates.io.
+    pub fn releases(self) -> ReleaseSource {
+        let source = ReleaseSource::github("sapphire-turtle", "sapphire-ledger");
+        match self {
+            Edition::Headless => source
+                .asset("sapphire-ledger-headless")
+                .cargo_crate("sapphire-ledger-headless"),
+            Edition::Desktop => source.asset("sapphire-ledger-desktop"),
+        }
+    }
+}
+
 /// The server the framework's one-shot verbs dispatch against: the ledger's
-/// MCP tools and API version, nothing mounted.
+/// MCP tools, API version and `edition`'s releases, nothing mounted.
 ///
 /// Of the framework's verbs only `service`, `update` and `mcp` build one:
 /// `service` reads the service spec from it, `update` the release source, and
 /// `mcp` serves the ledger's tools on stdio, dialling the *running* server.
 /// The rest talk to that server over IPC without building anything.
-pub fn build_oneshot() -> AppServer {
+pub fn build_oneshot(edition: Edition) -> AppServer {
     AppServer::new(&LEDGER_CTX, VERSION)
+        .releases(edition.releases())
         .app_api(sapphire_ledger_api::API_VERSION)
         .mcp(sapphire_ledger_mcp::service())
 }
@@ -59,8 +86,8 @@ pub fn build_oneshot() -> AppServer {
 /// ledger's methods, its MCP tools, and its HTTP port.
 ///
 /// [`run`] adds the bridge; a test runs this as it is.
-pub fn build() -> AppServer {
-    let server = build_oneshot().http_listen(default_http_addr());
+pub fn build(edition: Edition) -> AppServer {
+    let server = build_oneshot(edition).http_listen(default_http_addr());
     let ledger = Arc::new(CurrentLedger::new(Arc::clone(server.host())));
     server
         .extend(move |router| sapphire_ledger_mcp::register(router, Arc::new(move || ledger.get())))
@@ -185,10 +212,11 @@ impl CurrentLedger {
 /// [`serve_restarting`]: [`build`] with sync through the host's bridge and the
 /// `mcp` status row.
 ///
-/// `exe` is this executable, which the sync runtime reports to the bridge.
+/// `exe` is this executable, which the sync runtime reports to the bridge;
+/// `edition` the one it is.
 /// The runtime is made afresh for each round: a server stops the one it was
 /// given when it stops.
-pub fn build_serving(settings: &Settings, exe: PathBuf) -> AppServer {
+pub fn build_serving(settings: &Settings, exe: PathBuf, edition: Edition) -> AppServer {
     // A value the framework does not take stops the round when the server
     // starts; until then the row reads as the defaults.
     let config = ServerConfig::from_settings(settings).unwrap_or_default();
@@ -209,7 +237,7 @@ pub fn build_serving(settings: &Settings, exe: PathBuf) -> AppServer {
         exe,
         ManagedBy::Service,
     );
-    build()
+    build(edition)
         .sync(Arc::new(runtime))
         .status_rows(Arc::new(move || {
             vec![StatusRow {
@@ -220,8 +248,8 @@ pub fn build_serving(settings: &Settings, exe: PathBuf) -> AppServer {
 }
 
 /// Run the server until SIGTERM or SIGINT, restarting it in place whenever
-/// `server.restart` asks.
-pub async fn run() -> anyhow::Result<()> {
+/// `server.restart` asks. `edition` is the one running it.
+pub async fn run(edition: Edition) -> anyhow::Result<()> {
     let exe = std::env::current_exe()?;
 
     // The watch outlives the rounds and follows the workspace of whichever
@@ -234,7 +262,7 @@ pub async fn run() -> anyhow::Result<()> {
     });
 
     let result = serve_restarting(&LEDGER_CTX, LedgerSettings, move |settings: &Settings| {
-        let server = build_serving(settings, exe.clone());
+        let server = build_serving(settings, exe.clone(), edition);
         *current.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(server.host()));
         server
     })

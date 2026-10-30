@@ -86,7 +86,7 @@ async fn the_tools_work_on_the_servers_workspace_over_ipc() {
 
     let endpoint = Endpoint::in_dir(LEDGER_CTX.app_name, tmp.path().join("run"));
     std::fs::create_dir_all(tmp.path().join("run")).unwrap();
-    let server = serve::build().endpoint(endpoint.clone());
+    let server = serve::build(serve::Edition::Headless).endpoint(endpoint.clone());
     let task = tokio::spawn(async move { server.run().await.unwrap() });
     wait_until_listening(&endpoint).await;
 

@@ -142,7 +142,8 @@ mod tests {
             "got: {err}"
         );
 
-        let server = sapphire_ledger_server::build().endpoint(endpoint.clone());
+        let server = sapphire_ledger_server::build(sapphire_ledger_server::Edition::Desktop)
+            .endpoint(endpoint.clone());
         let task = tokio::spawn(async move { server.run().await.unwrap() });
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         while !ipc::probe(&endpoint).await.unwrap() {

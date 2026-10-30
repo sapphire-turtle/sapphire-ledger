@@ -23,23 +23,25 @@ use sapphire_ledger_core::{AppKind, LEDGER_CTX};
 use crate::cli::{Command, FrameworkCommand, GlobalArgs};
 use sapphire_ledger_server as serve;
 
-/// Run one command, exiting the process with its code when a framework verb
+pub use sapphire_ledger_server::Edition;
+
+/// Run one command as `edition`, exiting the process with its code when a framework verb
 /// fails with one.
-pub fn run(command: Command, global: GlobalArgs) -> Result<()> {
+pub fn run(command: Command, global: GlobalArgs, edition: Edition) -> Result<()> {
     match command {
         // What the service manager starts.
         Command::Framework(FrameworkCommand::Serve) => {
             sapphire_ledger_core::init_app_context(AppKind::Server);
-            runtime()?.block_on(serve::run())
+            runtime()?.block_on(serve::run(edition))
         }
         // Warned first: `dispatch` exits when the status is not good.
         Command::Framework(FrameworkCommand::Status) => {
             warn_if_shadowed();
-            dispatch(FrameworkCommand::Status)
+            dispatch(FrameworkCommand::Status, edition)
         }
         // `mcp` among them: its stdout is the MCP stream, and the
         // framework's console log goes to stderr (sapphire-framework#232).
-        Command::Framework(command) => dispatch(command),
+        Command::Framework(command) => dispatch(command, edition),
         Command::Init {
             path,
             base_currency,
@@ -90,12 +92,12 @@ pub fn run(command: Command, global: GlobalArgs) -> Result<()> {
 }
 
 /// Run one of the framework's verbs other than `serve`, exiting with its code.
-fn dispatch(command: FrameworkCommand) -> Result<()> {
+fn dispatch(command: FrameworkCommand, edition: Edition) -> Result<()> {
     sapphire_ledger_core::init_app_context(AppKind::Cli);
     let code = runtime()?.block_on(command.dispatch(
         &LEDGER_CTX,
         serve::LedgerSettings,
-        |_: &Settings| serve::build_oneshot(),
+        |_: &Settings| serve::build_oneshot(edition),
         serve::VERSION,
     ))?;
     if code != 0 {
