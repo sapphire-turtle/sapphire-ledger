@@ -21,7 +21,7 @@ edition = "2024"
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
-grain-id = { version = "0.16", features = ["serde", "schemars"] }
+grain-id = { version = "0.17", features = ["serde", "schemars"] }
 indexmap = { version = "2", features = ["serde"] }
 # The MCP macros name `rmcp` directly, so it is the version sapphire-framework
 # builds on (`sapphire_framework::mcp::rmcp`).
