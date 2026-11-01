@@ -624,8 +624,8 @@ has selected:
   agent launches as a child process. It dials the running server and never
   starts one; a missing server is reported per call, and the next call tries
   again.
-- **HTTP** — `/mcp` on the server's HTTP listener, behind the workgroup's
-  external-device tokens, when `config.toml` turns it on. See [Server:
+- **HTTP** — `/mcp` on the server's HTTP listener, behind the workspace's
+  API keys, when `config.toml` turns it on. See [Server:
   `sapphire-ledger serve`](#server-sapphire-ledger-serve) below.
 
 The two halves live in `sapphire-ledger-mcp`:
@@ -647,9 +647,10 @@ one definition serve both.
 
 ### Tools
 
-Nineteen tools of the ledger's own, declared in
-[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): nine read, ten
-write. Beside them the framework's read-only tools (`status`,
+Twenty tools of the ledger's own, declared in
+[`tools.rs`](../crates/sapphire-ledger-mcp/src/tools.rs): nine read, eleven
+write. The reading ones carry `read_only_hint = true`, which is what lets a
+read-only API key call them (a unit test pins the set). Beside them the framework's read-only tools (`status`,
 `workspace_show`, `workspace_search`, `workspace_read_file`,
 `workspace_list_dir`, `workgroup_show`, `device_list`). The framework's raw
 file writes are deliberately left out: a record written without the ledger's
@@ -706,12 +707,14 @@ signals, `<data dir>/logs/app.log`) plus what is the ledger's own — sync
 through the host's `sapphire-bridge`, the `sapphire-ledger.*` methods its
 MCP tools call, and the duplicate-id watch. The framework's other verbs
 (`status`, `service install|uninstall|status`,
-`workspace init|select|show|move|remove`, `workgroup …`, `device …`,
-`embedding …`, `external-device …`, `config …`, `update`, `mcp`) are flattened into the same command line
-beside the ledger's own. The original reasoning for `/mcp` lives in
+`workspace init|select|show|move|remove`, `api-key …`, `config …`, `update`,
+`mcp`) are flattened into the same command line beside the ledger's own. The
+workgroup, its devices and embedding are managed with `sapphire-bridge
+workgroup|device|embedding` (the ledger's own `workgroup`, `device` and
+`embedding` went with sapphire-framework 0.24). The original reasoning for `/mcp` lives in
 [`docs/superpowers/specs/2026-09-02-ledger-server-design.md`](superpowers/specs/2026-09-02-ledger-server-design.md);
-its key-file and user/device sections were superseded by sapphire-framework
-0.15's external devices, described below.
+its key-file and user/device sections were superseded by sapphire-framework's
+API keys (0.24; 0.15 to 0.23 had the workgroup's external devices), described below.
 
 **The server serves one workspace: the one selected.** `--ledger-dir` is for
 the ledger's own verbs; the server serves whatever `workspace select` (or
@@ -769,21 +772,23 @@ rather than a configuration mistake.
 
 **TLS is out of scope.** `/mcp` is plain HTTP, and has
 no plans to speak anything else, so any bind past loopback puts every
-device's bearer token on the wire in cleartext. Put it behind a reverse
+client's bearer token on the wire in cleartext. Put it behind a reverse
 proxy that terminates TLS, or reach it over a network that is already
 encrypted (a WireGuard or Tailscale interface, say), rather than exposing
 `listen` directly.
 
-**Clients are the workgroup's external devices.** A bearer token belongs to
-an external device in the workgroup's ledger (`external_devices/<id>.toml`,
-synced by the bridge), which lists the applications it may use. The ledger
-keeps only the token's SHA-256; the token itself is shown once, by
-`external-device add` or `rotate`. `/mcp` asks the bridge about every
-presented token through the framework's `BridgeVerifier`, which caches a
-success for 30 seconds — so a `retire` or `rotate` takes effect within that
-long, with no restart. A refused token is 401; with the bridge not running
-every request is 503, because the token may well be fine. This server holds
-no key file and no user registry of its own.
+**Clients hold the workspace's API keys.** A bearer token belongs to an API
+key kept in the served workspace (`<root>/.sapphire-ledger/api_keys/<id>.toml`,
+synced with it), so no bridge or workgroup is needed to check one. The store
+keeps only the token's hash; the token itself is shown once, by
+`api-key add` or `rotate` (`external-device` is a hidden alias for one
+release). Every key has a profile: `read-only` may call only the MCP tools
+marked `readOnlyHint` (the ledger's reading tools and the framework's), and
+`read-write` (or `admin`) everything. A refused token is 401, a call its
+profile does not allow 403. Keys the workgroup's external devices held before
+0.24 are imported once, keeping their tokens, as **read-only**: an agent that
+records entries over HTTP needs a new key, `api-key add <name> --profile
+read-write`. This server holds no user registry of its own.
 
 **Duplicate ids are reported, never resolved.** A background watch re-walks
 the workspace once at startup and then every five minutes, and logs any id
@@ -802,15 +807,15 @@ A first-time setup:
 sapphire-ledger init ~/ledger                         # the ledger's files
 sapphire-ledger service install                       # or run `sapphire-ledger serve` in a terminal
 sapphire-ledger workspace select ~/ledger             # what the server serves
-sapphire-ledger external-device add laptop            # token to stdout, once; needs the bridge
+sapphire-ledger api-key add laptop --profile read-write  # token to stdout, once
 sapphire-ledger status
 ```
 
 `init` and `workspace init` can come in either order: `init` completes a
 marker the framework made, keeping its `[workspace.*]` tables.
 
-`last_updated_by` is not implemented. `Authenticated` carries the external
-device's id and name — that is the hook the field will use once it exists,
+`last_updated_by` is not implemented. `Authenticated` carries the API key's
+id and name — that is the hook the field will use once it exists,
 but no record schema has the field yet.
 
 ### Library API shape
@@ -861,7 +866,7 @@ permissive until there is a reason to tighten it.
   with a duplicate-id watch; the framework's verbs sit beside the ledger's.
 - ✅ MCP on the framework's MCP (sapphire-framework#233): the ledger's tools
   call the server over IPC, served on stdio (`sapphire-ledger mcp`) and at
-  `/mcp` behind external-device tokens.
+  `/mcp` behind the workspace's API keys.
 - 🚧 Sync through the bridge is wired but not yet exercised end to end; the
   ledger's own verbs still write the files directly rather than over IPC.
 - ✅ CLI write commands (`account add`, `tx add`, `assertion add`, `price add`, `tx list`).

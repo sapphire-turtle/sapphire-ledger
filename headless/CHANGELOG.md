@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** sapphire-framework 0.24. HTTP clients (`/mcp`) authenticate with API keys kept in the workspace (`<root>/.sapphire-ledger/api_keys/`), managed with `sapphire-ledger api-key list|add|retire|restore|rotate` (`external-device` is a hidden alias for this release). Every key has a profile: the workgroup's existing external-device tokens keep working but become **read-only**, so they may call only the reading tools (`list_accounts`, `query_postings`, `run_panel`, …); an agent that records entries needs a new key, `sapphire-ledger api-key add <name> --profile read-write`. Update `sapphire-bridge` together with the ledger.
+- **Breaking:** the `workgroup`, `device` and `embedding` subcommands are gone: use `sapphire-bridge workgroup|device|embedding`.
+
 ## [0.2.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.2.0...v0.2.1) - 2026-10-25
 
 ### Other

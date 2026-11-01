@@ -91,11 +91,13 @@ The data model, validation, write path and MCP server work. Either edition
 puts one command on PATH, `sapphire-ledger`: the ledger's own verbs, and the
 [sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)
 app-server verbs beside them (`serve`, `status`, `service`, `workspace`,
-`workgroup`, `device`, `external-device`, `mcp`, …). With the server
+`api-key`, `config`, `mcp`, …); the workgroup, its devices and embedding are
+`sapphire-bridge`'s (`sapphire-bridge workgroup|device|embedding`). With the server
 running (`sapphire-ledger serve`, or `sapphire-ledger service install`), point an MCP
 client at `sapphire-ledger mcp` to read and record entries over stdio, or turn
-on its `/mcp` in `config.toml` (`[http.mcp] enabled`) and reach it over HTTP with an external-device
-token. Both serve the workspace the server has selected (see
+on its `/mcp` in `config.toml` (`[http.mcp] enabled`) and reach it over HTTP with an API key
+(`sapphire-ledger api-key add <name> --profile read-only|read-write`; a
+read-only key may call only the reading tools). Both serve the workspace the server has selected (see
 [`docs/design.md`](docs/design.md#mcp-server) for the setup and the auth
 model). The desktop app's window (`sapphire-ledger-desktop`) is a client of that
 server: it shows the accounts with their balances and each account's

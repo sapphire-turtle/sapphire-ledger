@@ -395,4 +395,36 @@ mod tests {
         assert!(!names.iter().any(|n| n == "budget_report"), "{names:?}");
         assert_eq!(names.len(), 20 + 7, "{names:?}");
     }
+
+    /// A read-only API key may call only the tools marked `readOnlyHint`, so
+    /// every tool that only reads carries it and no tool that writes does.
+    #[test]
+    fn exactly_the_reading_tools_are_marked_read_only() {
+        let mut read_only: Vec<String> = tools()
+            .iter()
+            .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
+            .map(|t| t.name.to_string())
+            .collect();
+        read_only.sort();
+        let mut expected = vec![
+            "list_accounts",
+            "get_transaction",
+            "query_postings",
+            "query_prices",
+            "validate_workspace",
+            "list_budgets",
+            "query_series",
+            "list_panels",
+            "run_panel",
+            "status",
+            "workspace_show",
+            "workspace_search",
+            "workspace_read_file",
+            "workspace_list_dir",
+            "workgroup_show",
+            "device_list",
+        ];
+        expected.sort();
+        assert_eq!(read_only, expected);
+    }
 }
