@@ -18,7 +18,7 @@ sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.3.0
 sapphire-framework = { workspace = true, features = ["eframe", "ipc"] }
 # The ledger's methods, their parameters and the records they answer with.
 # Nothing of the files: the window reads nothing from disk.
-sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "2.1.0" }
+sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "3.0.0" }
 # Plots for the Charts screen; 0.38 renders with egui 0.37, the framework's.
 egui_plot = "0.38"
 chrono.workspace = true
