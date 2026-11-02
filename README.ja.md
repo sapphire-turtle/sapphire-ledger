@@ -83,7 +83,7 @@ sapphire-ledger/
 
 ## ステータス
 
-データモデル、検証、書き込みパス、MCPサーバーは動作します。どちらの版も PATH に1つのコマンド`sapphire-ledger`を置き、ledger独自のコマンドと、[sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)のアプリサーバー用コマンド（`serve`、`status`、`service`、`workspace`、`workgroup`、`device`、`external-device`、`mcp`など）が同じ階層に並びます。サーバー（`sapphire-ledger serve`、または`sapphire-ledger service install`）を起動した状態で、MCPクライアントを`sapphire-ledger mcp`に向けてstdio経由でエントリの読み書き・記録をしたり、`config.toml`（`[http.mcp] enabled`）で`/mcp`を有効にしてHTTP経由・外部デバイスのトークンで同じことができます。どちらもサーバーが選択中のワークスペースを対象にします（セットアップと認証モデルは[`docs/design.md`](docs/design.md#mcp-server)参照）。デスクトップアプリ（`sapphire-ledger-desktop`）のウィンドウはそのサーバーのクライアントで、勘定と残高、勘定ごとの仕訳の閲覧、取引・勘定の記録、フレームワークの同期パネルを備えます。CLIも書き込みに対応しています：
+データモデル、検証、書き込みパス、MCPサーバーは動作します。どちらの版も PATH に1つのコマンド`sapphire-ledger`を置き、ledger独自のコマンドと、[sapphire-framework](https://github.com/sapphire-turtle/sapphire-framework)のアプリサーバー用コマンド（`serve`、`status`、`service`、`workspace`、`api-key`、`config`、`mcp`など）が同じ階層に並びます。ワークグループ・デバイス・埋め込みは`sapphire-bridge`のコマンドです（`sapphire-bridge workgroup|device|embedding`）。サーバー（`sapphire-ledger serve`、または`sapphire-ledger service install`）を起動した状態で、MCPクライアントを`sapphire-ledger mcp`に向けてstdio経由でエントリの読み書き・記録をしたり、`config.toml`（`[http.mcp] enabled`）で`/mcp`を有効にしてHTTP経由・APIキー（`sapphire-ledger api-key add <名前> --profile read-only|read-write`。読み取り専用のキーは読み取りのツールだけを呼べます）で同じことができます。どちらもサーバーが選択中のワークスペースを対象にします（セットアップと認証モデルは[`docs/design.md`](docs/design.md#mcp-server)参照）。デスクトップアプリ（`sapphire-ledger-desktop`）のウィンドウはそのサーバーのクライアントで、勘定と残高、勘定ごとの仕訳の閲覧、取引・勘定の記録、フレームワークの同期パネルを備えます。CLIも書き込みに対応しています：
 
 ```
 sapphire-ledger account add Expenses:Food --type Expense

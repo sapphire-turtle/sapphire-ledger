@@ -109,6 +109,6 @@ mod tests {
 
     #[test]
     fn api_version_is_the_major() {
-        assert_eq!(API_VERSION, 2, "the crate's major is the API version");
+        assert_eq!(API_VERSION, 3, "the crate's major is the API version");
     }
 }
