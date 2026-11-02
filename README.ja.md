@@ -24,11 +24,21 @@ sapphire-framework上に構築された、ローカルファーストの複式�
 
 | 版 | 用途 | 入れ方 |
 |---|---|---|
-| デスクトップ版（`sapphire-ledger-desktop`） | GUI を使うふだんの利用 | Windows・macOS・Linux のインストーラー（準備中） |
+| デスクトップ版（`sapphire-ledger-desktop`） | GUI を使うふだんの利用 | Windows・macOS・Linux のインストーラー |
 | ヘッドレス版（`sapphire-ledger-headless`） | GUI のないホストやサーバー | インストールスクリプト、cargo-binstall、cargo |
 
 両方を入れると `sapphire-ledger` が2つになります。PATH 上のものが実行したものと違うときは、
 `sapphire-ledger status` が警告します。
+
+### デスクトップ版：インストーラー
+
+[最新のリリース](https://github.com/sapphire-turtle/sapphire-ledger/releases/latest)から、お使いの OS のインストーラーをダウンロードしてください。
+Windows は `sapphire-ledger-desktop-win-Setup.exe`、macOS は `sapphire-ledger-desktop-osx-Setup.pkg`、
+Linux は `sapphire-ledger-desktop.AppImage` です。PATH に `sapphire-ledger` を置き、自分で最新版に更新します。
+初回の起動時に、ウィンドウを閉じている間も MCP サーバーや HTTP のクライアントが使えるよう、
+アプリサーバーをバックグラウンドで動かし続けるかを尋ねます。同期は Sapphire Bridge を通るので、
+[sapphire-framework の最新のリリース](https://github.com/sapphire-turtle/sapphire-framework/releases/latest)にある Sapphire Bridge のインストーラー
+（`sapphire-bridge-desktop-*`）も入れてください。
 
 ### ヘッドレス版：インストールスクリプト
 

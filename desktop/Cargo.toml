@@ -9,13 +9,32 @@ license-file = "LICENSE"
 repository.workspace = true
 publish = false
 
+[[bin]]
+name = "sapphire-ledger-desktop"
+path = "src/main.rs"
+
+# The Windows console shim the package puts on `PATH` as `sapphire-ledger.exe`
+# (src/bin/console.rs).
+[[bin]]
+name = "sapphire-ledger-console"
+path = "src/bin/console.rs"
+required-features = ["velopack"]
+
+[features]
+# The release workflow's build: the Velopack package's start, its updater, its first run
+# and its service (src/package.rs). `cargo build` makes the plain binary.
+velopack = ["sapphire-framework/package"]
+
 [dependencies]
 # Every command but the window — `serve`, `mcp`, `tx`, `status`, … — runs the
 # CLI's own code, so this one binary does all the CLI does.
 sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.3.0" }
 # `eframe`: `gui::app::run` starts the window, and `gui::{eframe, egui}` are the
 # versions it renders with.
-sapphire-framework = { workspace = true, features = ["eframe", "ipc"] }
+sapphire-framework = { workspace = true, features = ["eframe", "ipc", "server"] }
+# The window's icon and app-menu entry (`LauncherSpec`'s icon), and whether this runs in a
+# package; the framework's version of it.
+corundum-framework-platform = "0.7.0"
 # The ledger's methods, their parameters and the records they answer with.
 # Nothing of the files: the window reads nothing from disk.
 sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "3.0.0" }
