@@ -14,19 +14,19 @@
 //! `run_panel`; Settings, at the rail's foot, picks that workspace and manages
 //! the workgroup. Closing the window stops nothing.
 //!
-//! With the `velopack` feature (the release workflow's build) it is a Velopack package
+//! With the `package` feature (the release workflow's build) it is a cargo-packager package
 //! (src/package.rs): it updates itself, and its first start asks to keep the app server
 //! running.
 
 // In the package, a GUI binary on Windows: no console window behind the window or the
 // service. The command line goes through the console shim (src/bin/console.rs).
-#![cfg_attr(all(windows, feature = "velopack"), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, feature = "package"), windows_subsystem = "windows")]
 
 mod charts;
 mod client;
 mod form;
 mod ledger;
-#[cfg(feature = "velopack")]
+#[cfg(feature = "package")]
 mod package;
 
 use std::sync::Arc;
@@ -45,8 +45,8 @@ use crate::client::LedgerClient;
 use crate::ledger::LedgerView;
 
 /// Sapphire Ledger in the OS's app menu, and the window's id and icon. As the package's
-/// (`release-binaries.yml`): `org.sapphire-turtle.sapphire-ledger` is its macOS bundle id and
-/// `Office;Finance` its Linux category. Not the packId (`sapphire-ledger-desktop`), as corundum's demo.
+/// (`[package.metadata.packager]`): `org.sapphire-turtle.sapphire-ledger` is its identifier
+/// and its macOS bundle id, and Finance its category.
 const LAUNCHER: LauncherSpec = LauncherSpec {
     id: "sapphire-ledger",
     name: "Sapphire Ledger",
@@ -124,9 +124,9 @@ struct DesktopCli {
 
 /// Whether this start goes through the package's start: every start but `serve`, the
 /// package's service (the start starts the services an update stopped, and that is this
-/// process). Velopack's hooks pass arguments clap rejects, so this is decided before clap
-/// may exit on them.
-#[cfg_attr(not(feature = "velopack"), allow(dead_code))]
+/// process). The installer's hooks (`--corundum-package <hook>`) pass arguments clap
+/// rejects, so this is decided before clap may exit on them.
+#[cfg_attr(not(feature = "package"), allow(dead_code))]
 fn runs_package_start(parsed: &Result<DesktopCli, clap::Error>) -> bool {
     !matches!(
         parsed,
@@ -139,9 +139,9 @@ fn runs_package_start(parsed: &Result<DesktopCli, clap::Error>) -> bool {
 
 fn main() -> anyhow::Result<()> {
     let parsed = DesktopCli::try_parse();
-    // Velopack's start: a hook runs and exits here. The window's console first, so the
+    // The package's start: an install hook runs and exits here. The window's console first, so the
     // hooks log; a command installs its own.
-    #[cfg(feature = "velopack")]
+    #[cfg(feature = "package")]
     if runs_package_start(&parsed) {
         if !matches!(
             parsed,
@@ -157,7 +157,7 @@ fn main() -> anyhow::Result<()> {
     let cli = parsed.unwrap_or_else(|e| e.exit());
     match cli.command {
         // In the package, the package's updater replaces it, not the desktop release file.
-        #[cfg(feature = "velopack")]
+        #[cfg(feature = "package")]
         Some(Command::Framework(FrameworkCommand::Update(args)))
             if corundum_framework_platform::package::current().is_some() =>
         {
@@ -170,7 +170,7 @@ fn main() -> anyhow::Result<()> {
 
 /// `update` in the package: `sapphire-bridge` first (unless `--no-bridge`), as the package's
 /// own update ends this process, then the package through its updater. The exit code.
-#[cfg(feature = "velopack")]
+#[cfg(feature = "package")]
 fn package_update(args: &sapphire_framework::server::AppUpdateArgs) -> i32 {
     let bridge = if args.no_bridge {
         0
@@ -207,7 +207,7 @@ fn window() -> eframe::Result<()> {
     sapphire_framework::gui::app::run(app_options(), |setup: AppSetup<'_>| {
         let settings = Settings::new(setup.framework);
         // About's service row and updates, in the package.
-        #[cfg(feature = "velopack")]
+        #[cfg(feature = "package")]
         let settings = settings.with_package_about(setup.package_about);
         let ledger_client = Arc::new(LedgerClient::new(
             APP.app_name,
@@ -249,7 +249,7 @@ fn app_options() -> AppOptions {
         .inner_size([1000.0, 640.0])
         .min_inner_size([720.0, 440.0])
         .launcher(LAUNCHER);
-    #[cfg(feature = "velopack")]
+    #[cfg(feature = "package")]
     let options = options.package(package::APP_PACKAGE);
     options
 }
@@ -258,7 +258,7 @@ fn app_options() -> AppOptions {
 mod tests {
     use super::*;
 
-    // Velopack's hooks start the binary with arguments clap does not know; the package's
+    // The installer's hooks start the binary with arguments clap does not know; the package's
     // start must see them before clap exits on them.
     #[test]
     fn package_start_runs_before_clap_rejects() {

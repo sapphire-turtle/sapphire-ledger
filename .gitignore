@@ -25,3 +25,5 @@ target
 # --- repository specific ---
 tmp
 .cargo
+# The desktop app's icons, rendered for its package (release-packager.yml).
+/desktop/icons/

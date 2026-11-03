@@ -18,12 +18,12 @@ path = "src/main.rs"
 [[bin]]
 name = "sapphire-ledger-console"
 path = "src/bin/console.rs"
-required-features = ["velopack"]
+required-features = ["package"]
 
 [features]
-# The release workflow's build: the Velopack package's start, its updater, its first run
+# The release workflow's build: the package's start, its updater, its first run
 # and its service (src/package.rs). `cargo build` makes the plain binary.
-velopack = ["sapphire-framework/package"]
+package = ["sapphire-framework/package"]
 
 [dependencies]
 # Every command but the window — `serve`, `mcp`, `tx`, `status`, … — runs the
@@ -34,7 +34,7 @@ sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.3.0
 sapphire-framework = { workspace = true, features = ["eframe", "ipc", "server"] }
 # The window's icon and app-menu entry (`LauncherSpec`'s icon), and whether this runs in a
 # package; the framework's version of it.
-corundum-framework-platform = "0.7.0"
+corundum-framework-platform = "0.8.0"
 # The ledger's methods, their parameters and the records they answer with.
 # Nothing of the files: the window reads nothing from disk.
 sapphire-ledger-api = { path = "../crates/sapphire-ledger-api", version = "3.0.0" }
@@ -55,6 +55,18 @@ sapphire-ledger-server = { path = "../crates/sapphire-ledger-server", default-fe
 sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3.0", default-features = false }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "time"] }
+
+# The package (sapphire-turtle/.github's release-packager.yml, corundum-framework#103): the
+# window's binary, built with the `package` feature; the release workflow adds the Windows
+# console shim as `sapphire-ledger.exe`. The product name is the launcher's
+# (`LauncherSpec::name`), so the installer's shortcut and the launcher's entry coincide. The
+# icons are rendered into `icons/` by the `icons` example before packaging.
+[package.metadata.packager]
+productName = "Sapphire Ledger"
+identifier = "org.sapphire-turtle.sapphire-ledger"
+category = "Finance"
+binaries = [{ path = "sapphire-ledger-desktop", main = true }]
+icons = ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"]
 
 # `cargo binstall --git https://github.com/sapphire-turtle/sapphire-ledger sapphire-ledger-desktop`
 # downloads the release file instead of building it (this crate is not on crates.io), following
