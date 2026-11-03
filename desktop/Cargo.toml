@@ -52,7 +52,7 @@ clap.workspace = true
 [dev-dependencies]
 # The real server, for the client test: `sapphire_ledger_server::build()`.
 sapphire-ledger-server = { path = "../crates/sapphire-ledger-server", default-features = false }
-sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3.0", default-features = false }
+sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3.1", default-features = false }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "time"] }
 
