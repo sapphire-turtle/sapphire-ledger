@@ -7,11 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.2.1...v0.3.0) - 2026-11-03
+
+### Added
+
+- **Breaking:** Sapphire Ledger is distributed as an installer per OS, made with cargo-packager ([#73](https://github.com/sapphire-turtle/sapphire-ledger/pull/73)): `sapphire-ledger-desktop_<version>_x64-setup.exe`, `_aarch64.dmg` and `_x86_64.AppImage`. The installed app updates itself from the latest release, checking each update's signature first.
+- **Breaking:** one desktop binary that runs the CLI too; headless, cli and server crates
+- the Ledger's picked transaction or account, and its forms, in the side pane
+- the app icon
+
 ### Changed
 
 - **Breaking:** sapphire-framework 0.24. HTTP clients (`/mcp`) authenticate with API keys kept in the workspace (`<root>/.sapphire-ledger/api_keys/`), managed with `sapphire-ledger api-key list|add|retire|restore|rotate` (`external-device` is a hidden alias for this release). Every key has a profile: the workgroup's existing external-device tokens keep working but become **read-only**, so they may call only the reading tools (`list_accounts`, `query_postings`, `run_panel`, …); an agent that records entries needs a new key, `sapphire-ledger api-key add <name> --profile read-write`. Update `sapphire-bridge` together with the ledger.
 - **Breaking:** the `workgroup`, `device` and `embedding` subcommands are gone: use `sapphire-bridge workgroup|device|embedding`.
 - Settings link to the Sapphire Bridge window for the workgroup, devices and embedding (sapphire-framework 0.24), and gain an API keys page.
+- **Breaking:** sapphire-framework 0.26: `workspace init` and `select` without a directory use the app's default workspace, `<data dir>/workspaces/default`, not the current directory; pass `.` for the old behaviour.
+
+### Fixed
+
+- name each edition's releases, so update installs them
 
 ## [0.2.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/desktop-v0.2.0...desktop-v0.2.1) - 2026-10-25
 
