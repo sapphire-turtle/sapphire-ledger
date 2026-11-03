@@ -11,12 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- [**breaking**] one desktop binary that runs the CLI too; headless, cli and server crates
+- **Breaking:** one desktop binary that runs the CLI too; headless, cli and server crates
+
+### Changed
+
+- **Breaking:** sapphire-framework 0.26
 
 ### Fixed
 
 - name each edition's releases, so update installs them
-
-### Other
-
-- *(deps)* [**breaking**] sapphire-framework 0.24

@@ -11,42 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(desktop)* [**breaking**] package with cargo-packager instead of Velopack ([#73](https://github.com/sapphire-turtle/sapphire-ledger/pull/73))
-- *(desktop)* ship Sapphire Ledger as a Velopack package
-- [**breaking**] one desktop binary that runs the CLI too; headless, cli and server crates
-- [**breaking**] accounts and transactions as Markdown with YAML front matter
-- *(desktop)* the books and sync, as a client of the app server
-- *(mcp)* move onto sapphire-framework's MCP (sapphire-framework#233)
-- fold the CLI and the server into one sapphire-ledger binary ([#19](https://github.com/sapphire-turtle/sapphire-ledger/pull/19))
-- *(cli)* add the write commands, so a person can record without an MCP client ([#15](https://github.com/sapphire-turtle/sapphire-ledger/pull/15))
-
-### Fixed
-
-- name each edition's releases, so update installs them
-- budget edits carry template panels along; budget opening counts sub-accounts
-
-### Other
-
-- *(deps)* [**breaking**] sapphire-framework 0.24
-- Merge pull request #57 from sapphire-turtle/docs/app-icon
-- add the app icon and show it in the README
-- update to sapphire-framework 0.22
-- note that any MCP client works, not only sapphire-agent
-- the series query, panels and the Charts screen
-- split the IPC API into sapphire-ledger-api
-- *(license)* desktop under GPL-3.0-or-later; no license at the root
-- Merge pull request #21 from sapphire-turtle/chore/framework-0.16
-- unify the tagline — built on sapphire-framework, human-agent collaboration
-- adopt repo-layout and language conventions; add CONTRIBUTING and README.ja
-- /mcp over HTTP, authenticated per device ([#14](https://github.com/sapphire-turtle/sapphire-ledger/pull/14))
-- Phase 1: record ids, the core write path, and an MCP server ([#9](https://github.com/sapphire-turtle/sapphire-ledger/pull/9))
-- *(cli)* rename binary from `sale` to `sapphire-ledger`
-- scaffold Cargo workspace with core/mcp/cli/desktop crates
+- **Breaking:** one desktop binary that runs the CLI too; headless, cli and server crates
 
 ### Changed
 
 - **Breaking:** sapphire-framework 0.24. HTTP clients (`/mcp`) authenticate with API keys kept in the workspace (`<root>/.sapphire-ledger/api_keys/`), managed with `sapphire-ledger api-key list|add|retire|restore|rotate` (`external-device` is a hidden alias for this release). Every key has a profile: the workgroup's existing external-device tokens keep working but become **read-only**, so they may call only the reading tools (`list_accounts`, `query_postings`, `run_panel`, …); an agent that records entries needs a new key, `sapphire-ledger api-key add <name> --profile read-write`. Update `sapphire-bridge` together with the ledger.
 - **Breaking:** the `workgroup`, `device` and `embedding` subcommands are gone: use `sapphire-bridge workgroup|device|embedding`.
+- **Breaking:** sapphire-framework 0.26: `workspace init` and `select` without a directory use the app's default workspace, `<data dir>/workspaces/default`, not the current directory; pass `.` for the old behaviour.
+
+### Fixed
+
+- name each edition's releases, so update installs them
 
 ## [0.2.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.2.0...v0.2.1) - 2026-10-25
 

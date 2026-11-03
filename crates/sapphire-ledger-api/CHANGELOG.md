@@ -9,10 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.0.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-api-v2.1.0...sapphire-ledger-api-v3.0.0) - 2026-11-03
 
-### Other
-
-- *(api)* [**breaking**] sapphire-ledger-api 3.0.0, for server-api 6
-
 ### Changed
 
 - **Breaking:** `server` re-exports sapphire-framework-server-api 6 (was 5), so the major and `API_VERSION` are 3: a client and server of different majors refuse the handshake.

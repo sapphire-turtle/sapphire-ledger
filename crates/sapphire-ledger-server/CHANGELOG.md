@@ -11,12 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- [**breaking**] one desktop binary that runs the CLI too; headless, cli and server crates
+- **Breaking:** one desktop binary that runs the CLI too; headless, cli and server crates
+
+### Changed
+
+- **Breaking:** sapphire-ledger-api 3.0.0, for sapphire-framework-server-api 6
+- **Breaking:** sapphire-framework 0.26
 
 ### Fixed
 
 - name each edition's releases, so update installs them
-
-### Other
-
-- *(api)* [**breaking**] sapphire-ledger-api 3.0.0, for server-api 6
