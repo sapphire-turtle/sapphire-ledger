@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.3.0...v0.3.1) - 2026-11-04
+
+### Fixed
+
+- *(deps)* sapphire-framework 0.27.1 and corundum 0.9.1 (Windows service install) ([#74](https://github.com/sapphire-turtle/sapphire-ledger/pull/74))
+
 ## [0.3.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.2.1...v0.3.0) - 2026-11-03
 
 ### Added
