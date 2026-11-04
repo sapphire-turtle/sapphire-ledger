@@ -1106,6 +1106,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
+name = "corundum-framework-build"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f57fe601340e4aaf8c00cc63cbb2cf998f071810a2f6af8f55489557a801d9fd"
+dependencies = [
+ "corundum-framework-platform 0.9.1",
+ "winresource",
+]
+
+[[package]]
 name = "corundum-framework-gui"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1113,7 +1123,7 @@ checksum = "cd85033545220316fa6cd28adafe6cfaac9c9d09e9b2ff7b1f5a793f8fd01a67"
 dependencies = [
  "corundum-framework-keys",
  "corundum-framework-package",
- "corundum-framework-platform",
+ "corundum-framework-platform 0.8.0",
  "corundum-framework-service",
  "corundum-framework-update",
  "eframe",
@@ -1165,7 +1175,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65ef8ceee3bec4aa262ac3c6c4bad5dc366ae8005be61d4497920f30a4c9bf5f"
 dependencies = [
  "cargo-packager-updater",
- "corundum-framework-platform",
+ "corundum-framework-platform 0.8.0",
  "corundum-framework-service",
  "corundum-framework-update",
  "semver",
@@ -1196,13 +1206,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "corundum-framework-platform"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64d12a9c34ca016361b5d8bc45e987f2567c1b56ca241f4eb0a01d5e1e83fe36"
+dependencies = [
+ "dirs 7.0.0",
+ "jni",
+ "ndk-context",
+ "objc2-foundation 0.3.2",
+ "resvg 0.49.0",
+ "sys-locale",
+ "tracing",
+ "unic-langid",
+ "windows",
+]
+
+[[package]]
 name = "corundum-framework-service"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40706cf5300fdc583f27cbc1a9a482f8d045b201c7861d131b129728d98637df"
 dependencies = [
  "clap",
- "corundum-framework-platform",
+ "corundum-framework-platform 0.8.0",
  "libc",
  "thiserror 2.0.21",
  "tracing",
@@ -1214,7 +1241,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6727e53aa5d52f8222c569fe7b46abf874ac21f48a1153a623ff267d8994d8c0"
 dependencies = [
- "corundum-framework-platform",
+ "corundum-framework-platform 0.8.0",
  "reqwest 0.13.5",
  "semver",
  "serde",
@@ -5091,7 +5118,7 @@ checksum = "dc88ee1e359544442ee6e6fd7baaf15f7d35ba6a7e597ccc350e7ae7b1d9a5ac"
 dependencies = [
  "corundum-framework-gui",
  "corundum-framework-package",
- "corundum-framework-platform",
+ "corundum-framework-platform 0.8.0",
  "corundum-framework-service",
  "corundum-framework-update",
  "eframe",
@@ -5114,7 +5141,7 @@ version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4129b5e47dcd7a3b84d5e701a184ab72b787584411433b3a0289f4336bf41f78"
 dependencies = [
- "corundum-framework-platform",
+ "corundum-framework-platform 0.8.0",
  "libc",
  "serde",
  "serde_json",
@@ -5321,7 +5348,7 @@ checksum = "ba5bdfd16291be45e17b6f8b6a6e6f549fbb61a2a0807af7258118a81fcb3303"
 dependencies = [
  "chrono",
  "clap",
- "corundum-framework-platform",
+ "corundum-framework-platform 0.8.0",
  "half",
  "indexmap",
  "md-5",
@@ -5391,7 +5418,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "corundum-framework-platform",
+ "corundum-framework-build",
+ "corundum-framework-platform 0.8.0",
  "egui_plot",
  "rust_decimal",
  "sapphire-framework",
@@ -7728,6 +7756,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "toml",
+ "version_check",
 ]
 
 [[package]]

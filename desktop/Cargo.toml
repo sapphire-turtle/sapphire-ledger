@@ -56,6 +56,10 @@ sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "time"] }
 
+[build-dependencies]
+# The app icon in the Windows executable (`build.rs`).
+corundum-framework-build = "0.9.1"
+
 # The package (sapphire-turtle/.github's release-packager.yml, corundum-framework#103): the
 # window's binary, built with the `package` feature; the release workflow adds the Windows
 # console shim as `sapphire-ledger.exe`. The product name is the launcher's
