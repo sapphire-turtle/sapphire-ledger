@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-core-v0.3.1...sapphire-ledger-core-v0.3.2) - 2026-11-04
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.3.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-core-v0.3.0...sapphire-ledger-core-v0.3.1) - 2026-11-03
 
 ### Changed
