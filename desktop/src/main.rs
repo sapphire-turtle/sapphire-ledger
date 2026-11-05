@@ -52,7 +52,7 @@ const LAUNCHER: LauncherSpec = LauncherSpec {
     name: "Sapphire Ledger",
     description: "Double-entry household accounts in plain files",
     category: "Office;Finance",
-    icon_svg: include_bytes!("../assets/app-icon.svg"),
+    icon_svg: include_bytes!("../../docs/icon.svg"),
     bundle_prefix: "org.sapphire-turtle",
 };
 
@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(LAUNCHER.bundle_prefix, "org.sapphire-turtle");
         assert_eq!(
             LAUNCHER.icon_svg,
-            include_bytes!("../assets/app-icon.svg").as_slice()
+            include_bytes!("../../docs/icon.svg").as_slice()
         );
         assert!(corundum_framework_platform::icon::render_rgba(LAUNCHER.icon_svg, 64).is_ok());
     }
