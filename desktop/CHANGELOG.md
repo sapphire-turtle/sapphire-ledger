@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.3.1...v0.4.0) - 2026-11-06
+
+### Added
+
+- *(desktop)* the macOS icon on the brand's tile
+
+### Fixed
+
+- *(desktop)* the Windows executable carries the app icon, in the brand colour
+
+### Other
+
+- *(deps)* [**breaking**] sapphire-framework 0.28, corundum-framework 0.11
+- Merge origin/main into fix/windows-exe-icon
+
 ### Added
 
 - On macOS, the app bundle put in `~/Applications` when Sapphire Ledger is added to the app menu has the mark on the brand's tile, as the package's icns, rather than the bare mark on the system's plate (corundum-framework 0.11).
