@@ -24,7 +24,11 @@ jobs:
     permissions:
       contents: write
     uses: sapphire-turtle/.github/.github/workflows/release-binary.yml@v1
+    # The signing key: each file with its `<file>.sig`, which `update` checks
+    # (sapphire-turtle/sapphire-framework#402).
+    secrets: inherit
     with:
+      sign: true
       tag: ${{ inputs.tag }}
       package: sapphire-ledger-headless
       binary: sapphire-ledger
@@ -36,7 +40,11 @@ jobs:
     permissions:
       contents: write
     uses: sapphire-turtle/.github/.github/workflows/release-binary.yml@v1
+    # The signing key: each file with its `<file>.sig`, which `update` checks
+    # (sapphire-turtle/sapphire-framework#402).
+    secrets: inherit
     with:
+      sign: true
       tag: ${{ inputs.tag }}
       package: sapphire-ledger-desktop
       binary: sapphire-ledger-desktop
