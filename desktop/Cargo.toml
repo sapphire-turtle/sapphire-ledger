@@ -2,7 +2,7 @@
 name = "sapphire-ledger-desktop"
 # Released together with `sapphire-ledger-headless`, under its `v{version}`
 # tags (release-plz.toml).
-version = "0.3.1"
+version = "0.4.0"
 edition.workspace = true
 description = "Desktop GUI for sapphire-ledger"
 license-file = "LICENSE"
@@ -28,7 +28,7 @@ package = ["sapphire-framework/package"]
 [dependencies]
 # Every command but the window — `serve`, `mcp`, `tx`, `status`, … — runs the
 # CLI's own code, so this one binary does all the CLI does.
-sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.3.1" }
+sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.4.0" }
 # `eframe`: `gui::app::run` starts the window, and `gui::{eframe, egui}` are the
 # versions it renders with.
 sapphire-framework = { workspace = true, features = ["eframe", "ipc", "server"] }
@@ -52,7 +52,7 @@ clap.workspace = true
 [dev-dependencies]
 # The real server, for the client test: `sapphire_ledger_server::build()`.
 sapphire-ledger-server = { path = "../crates/sapphire-ledger-server", default-features = false }
-sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3.2", default-features = false }
+sapphire-ledger-core = { path = "../crates/sapphire-ledger-core", version = "0.3.3", default-features = false }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "time"] }
 

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-cli-v0.3.1...sapphire-ledger-cli-v0.4.0) - 2026-11-06
+
+### Changed
+
+- sapphire-framework 0.28 (sapphire-turtle/sapphire-framework#402).
+
 ## [0.3.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-cli-v0.3.0...sapphire-ledger-cli-v0.3.1) - 2026-11-04
 
 ### Other
