@@ -11,24 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(desktop)* the macOS icon on the brand's tile
-
-### Fixed
-
-- *(desktop)* the Windows executable carries the app icon, in the brand colour
-
-### Other
-
-- *(deps)* [**breaking**] sapphire-framework 0.28, corundum-framework 0.11
-- Merge origin/main into fix/windows-exe-icon
-
-### Added
-
 - On macOS, the app bundle put in `~/Applications` when Sapphire Ledger is added to the app menu has the mark on the brand's tile, as the package's icns, rather than the bare mark on the system's plate (corundum-framework 0.11).
 
 ### Changed
 
 - **Breaking:** sapphire-framework 0.28 and corundum-framework 0.11. `update` installs only a release file signed with sapphire-turtle's key: it fetches the file's `<file>.sig` from the same release and refuses a file without one, or whose signature does not match (sapphire-turtle/sapphire-framework#402).
+- Each release file — the bare binaries for servers, the install script and `cargo binstall` — comes with its `<file>.sig`, made with sapphire-turtle's minisign key, which `update` checks (sapphire-turtle/sapphire-framework#402).
+
+### Fixed
+
+- On Windows, `sapphire-ledger-desktop.exe` carries the app icon, in the brand colour, so Explorer and the taskbar show Sapphire Ledger's icon rather than a generic one.
 
 ## [0.3.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.3.0...v0.3.1) - 2026-11-04
 

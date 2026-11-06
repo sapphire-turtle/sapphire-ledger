@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.2](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-mcp-v0.3.1...sapphire-ledger-mcp-v0.3.2) - 2026-11-06
 
-### Other
+### Changed
 
-- update Cargo.toml dependencies
+- sapphire-framework 0.28 (sapphire-turtle/sapphire-framework#402).
 
 ## [0.3.1](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-mcp-v0.3.0...sapphire-ledger-mcp-v0.3.1) - 2026-11-04
 
