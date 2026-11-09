@@ -44,16 +44,18 @@ Linux は `sapphire-ledger-desktop_<version>_x86_64.AppImage` です。PATH に 
 
 ```sh
 # Linux, macOS
-curl -fsSL https://raw.githubusercontent.com/sapphire-turtle/sapphire-framework/main/install/install.sh | sh -s -- ledger
+curl -fsSL https://raw.githubusercontent.com/sapphire-turtle/sapphire-ledger/main/install/install.sh | sh
 ```
 
 ```powershell
 # Windows
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sapphire-turtle/sapphire-framework/main/install/install.ps1))) ledger
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sapphire-turtle/sapphire-ledger/main/install/install.ps1)))
 ```
 
-`sapphire-ledger` と、同期に使う `sapphire-bridge` を `~/.local/bin` にインストールします。オプションは
-[インストールスクリプトの README](https://github.com/sapphire-turtle/sapphire-framework/tree/main/install/README.ja.md) を参照してください。
+`sapphire-ledger` を `~/.local/bin` にインストールします。ダウンロードしたファイルは、SHA-256 と、
+[minisign](https://jedisct1.github.io/minisign/) が `PATH` にあれば署名も確認してから入れます。
+同期に使う `sapphire-bridge` は入らないので、同期するホストでは [sapphire-framework のスクリプト](https://github.com/sapphire-turtle/sapphire-framework/tree/main/install/README.ja.md)で
+あわせて入れてください。オプションはそちらと同じです。
 
 ### ヘッドレス版：cargo-binstall か cargo
 
