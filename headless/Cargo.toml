@@ -3,7 +3,7 @@
 # the one command both editions put on PATH; the desktop app is
 # `sapphire-ledger-desktop`, and runs the same commands.
 name = "sapphire-ledger-headless"
-version = "0.4.0"
+version = "0.4.1"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -17,7 +17,7 @@ name = "sapphire-ledger"
 path = "src/main.rs"
 
 [dependencies]
-sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.4.0" }
+sapphire-ledger-cli = { path = "../crates/sapphire-ledger-cli", version = "0.4.1" }
 anyhow.workspace = true
 clap.workspace = true
 
