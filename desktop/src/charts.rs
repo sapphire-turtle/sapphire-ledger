@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use chrono::{Datelike, NaiveDate};
 use egui_plot::{Bar, BarChart, HoverPosition, Legend, Line, LineStyle, Plot, PlotPoints};
+use jiff::civil::Date;
 use rust_decimal::prelude::ToPrimitive;
 use sapphire_framework::gui::egui::{self, Color32};
 use sapphire_ledger_api::{
@@ -1202,21 +1202,25 @@ fn latest(values: &[Option<String>]) -> Option<&str> {
     values.iter().rev().find_map(|v| v.as_deref())
 }
 
-fn bucket_label(interval: Interval, period: Period, date: NaiveDate) -> String {
+fn bucket_label(interval: Interval, period: Period, date: Date) -> String {
     match interval {
         Interval::Day if period == Period::Month => date.day().to_string(),
-        Interval::Day | Interval::Week => date.format("%m-%d").to_string(),
-        Interval::Month => date.format("%Y-%m").to_string(),
-        Interval::Year => date.format("%Y").to_string(),
+        Interval::Day | Interval::Week => date.strftime("%m-%d").to_string(),
+        Interval::Month => date.strftime("%Y-%m").to_string(),
+        Interval::Year => date.strftime("%Y").to_string(),
     }
 }
 
 fn period_label(run: &PanelRun) -> String {
     match run.period {
-        Period::Month => run.from.format("%Y-%m").to_string(),
-        Period::Year => run.from.format("%Y").to_string(),
+        Period::Month => run.from.strftime("%Y-%m").to_string(),
+        Period::Year => run.from.strftime("%Y").to_string(),
         Period::Last12Months => {
-            format!("{} – {}", run.from.format("%Y-%m"), run.to.format("%Y-%m"))
+            format!(
+                "{} – {}",
+                run.from.strftime("%Y-%m"),
+                run.to.strftime("%Y-%m")
+            )
         }
     }
 }
@@ -1369,7 +1373,7 @@ fn grouped(raw: &str) -> String {
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> chrono::NaiveDate {
+    fn d(s: &str) -> jiff::civil::Date {
         s.parse().unwrap()
     }
 
@@ -1473,7 +1477,9 @@ mod tests {
     }
 
     fn panel(id: &str, name: &str) -> Panel {
-        let at = chrono::DateTime::parse_from_rfc3339("2026-10-17T00:00:00+09:00").unwrap();
+        let at = "2026-10-17T00:00:00+09:00"
+            .parse::<jiff::Timestamp>()
+            .unwrap();
         Panel {
             id: id.into(),
             name: name.into(),

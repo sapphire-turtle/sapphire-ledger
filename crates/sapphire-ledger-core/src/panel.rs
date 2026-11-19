@@ -2,7 +2,9 @@
 //! draw. A new chart is a new file, not a new method; an agent runs the same
 //! files as query presets.
 
-use chrono::{DateTime, Datelike, FixedOffset, Months, NaiveDate};
+use jiff::Timestamp;
+use jiff::ToSpan;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -77,8 +79,10 @@ pub struct Panel {
     pub interval: Option<Interval>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
-    pub created_at: DateTime<FixedOffset>,
-    pub updated_at: DateTime<FixedOffset>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub created_at: Timestamp,
+    #[serde(with = "crate::time::rfc3339")]
+    pub updated_at: Timestamp,
     pub plots: Vec<Plot>,
 }
 
@@ -101,37 +105,37 @@ pub fn default_interval(period: Period) -> Interval {
     }
 }
 
-fn shift_months(first: NaiveDate, by: i32) -> Option<NaiveDate> {
+fn shift_months(first: Date, by: i32) -> Option<Date> {
     if by >= 0 {
-        first.checked_add_months(Months::new(by as u32))
+        first.checked_add(i64::from(by).months()).ok()
     } else {
-        first.checked_sub_months(Months::new(by.unsigned_abs()))
+        first
+            .checked_sub(i64::from(by).unsigned_abs().cast_signed().months())
+            .ok()
     }
 }
 
-fn month_end(first: NaiveDate) -> Option<NaiveDate> {
-    first.checked_add_months(Months::new(1))?.pred_opt()
+fn month_end(first: Date) -> Option<Date> {
+    first.checked_add(1.month()).ok()?.yesterday().ok()
 }
 
 /// The dates `period` covers around `anchor`, moved by `offset` periods
 /// (a month for `last_12_months`).
-pub fn panel_range(
-    period: Period,
-    anchor: NaiveDate,
-    offset: i32,
-) -> Result<(NaiveDate, NaiveDate)> {
+pub fn panel_range(period: Period, anchor: Date, offset: i32) -> Result<(Date, Date)> {
     let out_of_range = || Error::Validation(format!("offset {offset} is out of range"));
-    let this_month =
-        NaiveDate::from_ymd_opt(anchor.year(), anchor.month(), 1).expect("a date's month exists");
+    let this_month = anchor.first_of_month();
     match period {
         Period::Month => {
             let first = shift_months(this_month, offset).ok_or_else(out_of_range)?;
             Ok((first, month_end(first).ok_or_else(out_of_range)?))
         }
         Period::Year => {
-            let year = anchor.year().checked_add(offset).ok_or_else(out_of_range)?;
-            let first = NaiveDate::from_ymd_opt(year, 1, 1).ok_or_else(out_of_range)?;
-            let last = NaiveDate::from_ymd_opt(year, 12, 31).ok_or_else(out_of_range)?;
+            let year = i32::from(anchor.year())
+                .checked_add(offset)
+                .and_then(|y| i16::try_from(y).ok())
+                .ok_or_else(out_of_range)?;
+            let first = Date::new(year, 1, 1).map_err(|_| out_of_range())?;
+            let last = Date::new(year, 12, 31).map_err(|_| out_of_range())?;
             Ok((first, last))
         }
         Period::Last12Months => {
@@ -205,11 +209,11 @@ pub struct PlotRun {
 pub struct PanelRun {
     pub name: String,
     pub period: Period,
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     pub interval: Interval,
     pub currency: String,
-    pub buckets: Vec<NaiveDate>,
+    pub buckets: Vec<Date>,
     pub plots: Vec<PlotRun>,
 }
 
@@ -217,9 +221,9 @@ pub struct PanelRun {
 pub fn run_panel(
     ws: &Workspace,
     def: &PanelDefinition,
-    anchor: NaiveDate,
+    anchor: Date,
     offset: i32,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<PanelRun> {
     check_panel(def)?;
     let (from, to) = panel_range(def.period, anchor, offset)?;

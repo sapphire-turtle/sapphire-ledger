@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{Datelike, NaiveDate};
+use jiff::civil::Date;
 
 use crate::account::account_name_segments;
 use crate::config::{CURRENT_SCHEMA_VERSION, CacheConfig, Config};
@@ -94,7 +94,7 @@ pub fn account_name_from_relative_path(rel: &Path) -> Result<String> {
 }
 
 /// Relative path for a transaction file: `transactions/{year}/{MM}/{id}.md`.
-pub fn transaction_relative_path(date: NaiveDate, id: &str) -> PathBuf {
+pub fn transaction_relative_path(date: Date, id: &str) -> PathBuf {
     PathBuf::from(TRANSACTIONS_DIR)
         .join(format!("{:04}", date.year()))
         .join(format!("{:02}", date.month()))
@@ -102,7 +102,7 @@ pub fn transaction_relative_path(date: NaiveDate, id: &str) -> PathBuf {
 }
 
 /// Relative path for an assertion file: `assertions/{year}/{MM}/{id}.toml`.
-pub fn assertion_relative_path(date: NaiveDate, id: &str) -> PathBuf {
+pub fn assertion_relative_path(date: Date, id: &str) -> PathBuf {
     PathBuf::from(ASSERTIONS_DIR)
         .join(format!("{:04}", date.year()))
         .join(format!("{:02}", date.month()))
@@ -110,7 +110,7 @@ pub fn assertion_relative_path(date: NaiveDate, id: &str) -> PathBuf {
 }
 
 /// Relative path for a price-log entry: `prices/{year}/{MM}/{id}.toml`.
-pub fn price_relative_path(date: NaiveDate, id: &str) -> PathBuf {
+pub fn price_relative_path(date: Date, id: &str) -> PathBuf {
     PathBuf::from(PRICES_DIR)
         .join(format!("{:04}", date.year()))
         .join(format!("{:02}", date.month()))

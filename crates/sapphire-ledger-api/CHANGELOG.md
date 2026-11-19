@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- `created_at` and `updated_at` are `jiff::Timestamp`, not chrono's `DateTime<FixedOffset>`, and dates are `jiff::civil::Date`: chrono is unmaintained (RUSTSEC-2026-0543). The JSON is unchanged: RFC 3339 in the server's offset, and `YYYY-MM-DD`. `time` has the helpers.
+- `sapphire-framework-server-api` 7 (re-exported as `server`), with sapphire-framework 0.29: the IPC handshake's API version 7.
+
 ## [3.0.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-api-v2.1.0...sapphire-ledger-api-v3.0.0) - 2026-11-03
 
 ### Changed

@@ -194,8 +194,8 @@ mod tests {
         serde_json::to_value(v).unwrap()
     }
 
-    fn at(s: &str) -> chrono::DateTime<chrono::FixedOffset> {
-        chrono::DateTime::parse_from_rfc3339(s).unwrap()
+    fn at(s: &str) -> jiff::Timestamp {
+        s.parse().unwrap()
     }
 
     /// The API's records answer with the JSON core's did before they were

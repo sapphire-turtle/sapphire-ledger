@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- Dates are `jiff::civil::Date` and `created_at` / `updated_at` `jiff::Timestamp`, not chrono's: chrono is unmaintained (RUSTSEC-2026-0543).
+
+### Changed
+
+- Records are written as before (`created_at = "2026-05-21T18:30:00+09:00"`), and releases on chrono still read them. A `created_at` or `updated_at` without an offset is read in this host's time zone, where it made the ledger fail to load before.
+- sapphire-framework 0.29, corundum-framework 0.13.
+
 ## [0.3.3](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-core-v0.3.2...sapphire-ledger-core-v0.3.3) - 2026-11-06
 
 ### Changed

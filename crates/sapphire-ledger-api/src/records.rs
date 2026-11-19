@@ -4,7 +4,8 @@
 //! with nothing of the files in them. Amounts are decimals written as strings
 //! so they survive JSON.
 
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -29,9 +30,9 @@ pub struct Account {
     /// Currencies this account may hold. Empty means any.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub currencies: Vec<String>,
-    pub opened_at: NaiveDate,
+    pub opened_at: Date,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub closed_at: Option<NaiveDate>,
+    pub closed_at: Option<Date>,
     /// Tags `add_transaction` adds to a transaction posting to this account.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub default_tags: Vec<String>,
@@ -79,7 +80,7 @@ pub struct Posting {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transaction {
     pub id: String,
-    pub date: NaiveDate,
+    pub date: Date,
     pub narration: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payee: Option<String>,
@@ -87,8 +88,10 @@ pub struct Transaction {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<TransactionStatus>,
-    pub created_at: DateTime<FixedOffset>,
-    pub updated_at: DateTime<FixedOffset>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub created_at: Timestamp,
+    #[serde(with = "crate::time::rfc3339")]
+    pub updated_at: Timestamp,
     pub postings: Vec<Posting>,
     /// Free-form notes on the whole transaction, in Markdown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,15 +103,17 @@ pub struct Transaction {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PriceEntry {
     pub id: String,
-    pub date: NaiveDate,
+    pub date: Date,
     pub base: String,
     pub quote: String,
     #[serde(with = "rust_decimal::serde::str")]
     pub rate: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    pub created_at: DateTime<FixedOffset>,
-    pub updated_at: DateTime<FixedOffset>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub created_at: Timestamp,
+    #[serde(with = "crate::time::rfc3339")]
+    pub updated_at: Timestamp,
 }
 
 /// One posting flattened with its transaction's context, which is what a
@@ -117,7 +122,7 @@ pub struct PriceEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostingHit {
     pub transaction_id: String,
-    pub date: NaiveDate,
+    pub date: Date,
     pub narration: String,
     pub account_id: Option<String>,
     pub account_name: Option<String>,

@@ -28,7 +28,8 @@ pub fn new_random_id() -> String {
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, FixedOffset, Local, NaiveDate};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 
 use crate::account::{Account, AccountType, resolve_account};
@@ -59,8 +60,8 @@ use crate::workspace::{
 /// unlikely, but the retry must still terminate.
 const ID_ATTEMPTS: usize = 32;
 
-fn now() -> DateTime<FixedOffset> {
-    Local::now().into()
+fn now() -> Timestamp {
+    crate::time::now()
 }
 
 /// Refuse to write into a ledger this build does not read: a record in the
@@ -240,7 +241,7 @@ pub fn create_account(
     name: String,
     account_type: AccountType,
     currencies: Vec<String>,
-    opened_at: NaiveDate,
+    opened_at: Date,
     description: Option<String>,
     default_tags: Vec<String>,
 ) -> Result<(String, PathBuf)> {
@@ -310,7 +311,7 @@ pub fn update_account(
 #[allow(clippy::too_many_arguments)]
 pub fn create_transaction(
     root: &Path,
-    date: NaiveDate,
+    date: Date,
     narration: String,
     payee: Option<String>,
     tags: Vec<String>,
@@ -345,7 +346,7 @@ pub fn create_transaction(
 /// [`create_transactions`].
 #[derive(Debug, Clone)]
 pub struct NewTransaction {
-    pub date: NaiveDate,
+    pub date: Date,
     pub narration: String,
     pub payee: Option<String>,
     pub tags: Vec<String>,
@@ -435,7 +436,7 @@ pub fn create_assertion(
     root: &Path,
     account_id: Option<String>,
     account_name: Option<String>,
-    date: NaiveDate,
+    date: Date,
     balances: Vec<Balance>,
 ) -> Result<(String, PathBuf)> {
     refuse_other_schema(root)?;
@@ -484,7 +485,7 @@ pub fn create_assertion(
 /// Write a new price-log entry.
 pub fn create_price(
     root: &Path,
-    date: NaiveDate,
+    date: Date,
     base: String,
     quote: String,
     rate: Decimal,
@@ -705,7 +706,7 @@ fn prepared(mut def: PanelDefinition) -> Result<PanelDefinition> {
     Ok(def)
 }
 
-fn panel_record(id: String, def: PanelDefinition, timestamp: DateTime<FixedOffset>) -> Panel {
+fn panel_record(id: String, def: PanelDefinition, timestamp: Timestamp) -> Panel {
     Panel {
         id,
         name: def.name,
@@ -860,8 +861,8 @@ mod tests {
     fn mint_free_id_will_not_reuse_an_id_from_another_month() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
-        let may: NaiveDate = "2026-05-21".parse().unwrap();
-        let june: NaiveDate = "2026-06-03".parse().unwrap();
+        let may: Date = "2026-05-21".parse().unwrap();
+        let june: Date = "2026-06-03".parse().unwrap();
 
         let mut sampled = 0usize;
         for round in 0..40 {

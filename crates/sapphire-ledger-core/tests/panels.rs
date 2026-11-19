@@ -1,9 +1,9 @@
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use sapphire_ledger_core::panel::{Mark, PanelSeries, Period, Plot, panel_range, run_panel};
 use sapphire_ledger_core::series::{BudgetLine, Measure, SeriesQuery};
 use sapphire_ledger_core::{AccountRef, AccountType, PanelDefinition, load_workspace, ops};
 
-fn d(s: &str) -> NaiveDate {
+fn d(s: &str) -> Date {
     s.parse().unwrap()
 }
 

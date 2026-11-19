@@ -2,7 +2,8 @@
 //! panel methods take and answer. The same shapes as core's, so a panel file
 //! reads as a definition here.
 
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::AccountType;
@@ -226,11 +227,11 @@ pub struct SeriesData {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeriesResult {
     pub currency: String,
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     pub interval: Interval,
     /// Each bucket's first date inside the range.
-    pub buckets: Vec<NaiveDate>,
+    pub buckets: Vec<Date>,
     pub series: Vec<SeriesData>,
 }
 
@@ -244,8 +245,10 @@ pub struct Panel {
     pub interval: Option<Interval>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<String>,
-    pub created_at: DateTime<FixedOffset>,
-    pub updated_at: DateTime<FixedOffset>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub created_at: Timestamp,
+    #[serde(with = "crate::time::rfc3339")]
+    pub updated_at: Timestamp,
     pub plots: Vec<Plot>,
 }
 
@@ -288,11 +291,11 @@ pub struct PanelRun {
     pub panel: Option<String>,
     pub name: String,
     pub period: Period,
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     pub interval: Interval,
     pub currency: String,
-    pub buckets: Vec<NaiveDate>,
+    pub buckets: Vec<Date>,
     pub plots: Vec<PlotRun>,
 }
 
