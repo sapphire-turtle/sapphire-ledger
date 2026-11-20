@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The status bar says whether your edits have reached another device — "Syncing…", "Not sent — no peer connected", or "Synced to *device* · HH:MM" — so you can tell when it is safe to close the computer. In a narrow window, a ring around the status dot shows that an edit has not been sent yet (sapphire-framework 0.29.1).
+
 ### Changed
 
-- sapphire-framework 0.29, corundum-framework 0.13.
+- sapphire-framework 0.29.1, corundum-framework 0.13.
 
 ## [0.4.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.3.1...v0.4.0) - 2026-11-06
 
