@@ -1,4 +1,5 @@
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -49,7 +50,7 @@ impl Posting {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transaction {
     pub id: String,
-    pub date: NaiveDate,
+    pub date: Date,
     pub narration: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payee: Option<String>,
@@ -57,8 +58,10 @@ pub struct Transaction {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<TransactionStatus>,
-    pub created_at: DateTime<FixedOffset>,
-    pub updated_at: DateTime<FixedOffset>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub created_at: Timestamp,
+    #[serde(with = "crate::time::rfc3339")]
+    pub updated_at: Timestamp,
     pub postings: Vec<Posting>,
     /// Free-form notes on the whole transaction: the file's Markdown body.
     #[serde(default, skip_serializing_if = "Option::is_none")]

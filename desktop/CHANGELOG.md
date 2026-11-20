@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- sapphire-framework 0.29, corundum-framework 0.13.
+
 ## [0.4.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/v0.3.1...v0.4.0) - 2026-11-06
 
 ### Added

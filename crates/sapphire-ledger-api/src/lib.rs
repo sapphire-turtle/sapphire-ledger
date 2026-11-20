@@ -34,6 +34,7 @@ pub use series::{
 pub mod templates;
 
 mod records;
+pub mod time;
 pub use records::{
     Account, AccountRef, AccountType, Budget, Posting, PostingHit, Price, PriceEntry, Transaction,
     TransactionStatus, ValidationIssue,

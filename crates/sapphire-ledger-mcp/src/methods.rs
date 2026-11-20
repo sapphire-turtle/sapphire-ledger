@@ -235,8 +235,8 @@ impl LedgerMethods {
     }
 }
 
-fn parse_date(raw: &str) -> anyhow::Result<chrono::NaiveDate> {
-    raw.parse::<chrono::NaiveDate>()
+fn parse_date(raw: &str) -> anyhow::Result<jiff::civil::Date> {
+    raw.parse::<jiff::civil::Date>()
         .with_context(|| format!("not a YYYY-MM-DD date: {raw}"))
 }
 
@@ -829,7 +829,7 @@ impl LedgerMethods {
                     .collect::<anyhow::Result<_>>()?,
             };
             let guard = self.lock_state();
-            let today = chrono::Local::now().date_naive();
+            let today = jiff::ZonedDateTime::now().date();
             let result = series::query_series(guard.workspace(), &request, today)?;
             Ok(serde_json::to_string_pretty(&wire::series_result(result)?)?)
         })()
@@ -862,7 +862,7 @@ impl LedgerMethods {
                 (None, Some(definition)) => (None, wire::panel_definition(&definition)?),
                 _ => anyhow::bail!("give exactly one of `panel` and `definition`"),
             };
-            let today = chrono::Local::now().date_naive();
+            let today = jiff::ZonedDateTime::now().date();
             let anchor = p
                 .anchor
                 .as_deref()

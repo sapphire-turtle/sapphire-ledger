@@ -6,7 +6,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use chrono::{Datelike, Days, Months, NaiveDate};
+use jiff::ToSpan;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -132,8 +133,8 @@ impl SeriesQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeriesRequest {
     /// Both ends included.
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     pub interval: Interval,
     /// `None`: the workspace's base currency.
     pub currency: Option<String>,
@@ -153,11 +154,11 @@ pub struct SeriesData {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeriesResult {
     pub currency: String,
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     pub interval: Interval,
     /// Each bucket's first date inside the range.
-    pub buckets: Vec<NaiveDate>,
+    pub buckets: Vec<Date>,
     pub series: Vec<SeriesData>,
 }
 
@@ -223,21 +224,19 @@ pub fn check_query(q: &SeriesQuery) -> Result<()> {
     Ok(())
 }
 
-fn next_start(d: NaiveDate, interval: Interval) -> Option<NaiveDate> {
+fn next_start(d: Date, interval: Interval) -> Option<Date> {
     match interval {
-        Interval::Day => d.succ_opt(),
-        Interval::Week => {
-            d.checked_add_days(Days::new(7 - u64::from(d.weekday().num_days_from_monday())))
-        }
-        Interval::Month => {
-            NaiveDate::from_ymd_opt(d.year(), d.month(), 1)?.checked_add_months(Months::new(1))
-        }
-        Interval::Year => NaiveDate::from_ymd_opt(d.year() + 1, 1, 1),
+        Interval::Day => d.tomorrow().ok(),
+        Interval::Week => d
+            .checked_add((7 - i64::from(d.weekday().to_monday_zero_offset())).days())
+            .ok(),
+        Interval::Month => d.first_of_month().checked_add(1.month()).ok(),
+        Interval::Year => Date::new(d.year().checked_add(1)?, 1, 1).ok(),
     }
 }
 
 /// The buckets' first dates: calendar-aligned, clipped to `from..=to`.
-pub fn buckets(from: NaiveDate, to: NaiveDate, interval: Interval) -> Result<Vec<NaiveDate>> {
+pub fn buckets(from: Date, to: Date, interval: Interval) -> Result<Vec<Date>> {
     if from > to {
         return Err(invalid(format!("from {from} is after to {to}")));
     }
@@ -258,16 +257,16 @@ pub fn buckets(from: NaiveDate, to: NaiveDate, interval: Interval) -> Result<Vec
 }
 
 /// Each bucket's last date.
-fn bucket_ends(starts: &[NaiveDate], to: NaiveDate) -> Vec<NaiveDate> {
+fn bucket_ends(starts: &[Date], to: Date) -> Vec<Date> {
     starts
         .iter()
         .skip(1)
-        .map(|next| next.pred_opt().expect("a later start has a day before it"))
+        .map(|next| next.yesterday().expect("a later start has a day before it"))
         .chain(std::iter::once(to))
         .collect()
 }
 
-fn bucket_of(starts: &[NaiveDate], date: NaiveDate) -> usize {
+fn bucket_of(starts: &[Date], date: Date) -> usize {
     starts.partition_point(|s| *s <= date) - 1
 }
 
@@ -322,7 +321,7 @@ fn running(values: &mut [Decimal], start: Decimal) {
     }
 }
 
-pub fn query_series(ws: &Workspace, req: &SeriesRequest, today: NaiveDate) -> Result<SeriesResult> {
+pub fn query_series(ws: &Workspace, req: &SeriesRequest, today: Date) -> Result<SeriesResult> {
     if req.series.is_empty() {
         return Err(invalid("a query needs at least one series"));
     }
@@ -409,10 +408,10 @@ fn actual(
     ws: &Workspace,
     q: &SeriesQuery,
     currency: &str,
-    from: NaiveDate,
-    to: NaiveDate,
-    starts: &[NaiveDate],
-    today: NaiveDate,
+    from: Date,
+    to: Date,
+    starts: &[Date],
+    today: Date,
 ) -> Result<Vec<Computed>> {
     let by_id: HashMap<&str, &Account> = ws.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
     let by_name: HashMap<&str, &Account> =
@@ -558,18 +557,14 @@ fn fold_top(
     out
 }
 
-fn days_in_month(d: NaiveDate) -> u32 {
-    let first = NaiveDate::from_ymd_opt(d.year(), d.month(), 1).expect("a date's month exists");
-    match first.checked_add_months(Months::new(1)) {
-        Some(next) => (next - first).num_days() as u32,
-        None => 31,
-    }
+fn days_in_month(d: Date) -> u32 {
+    u32::from(d.days_in_month().unsigned_abs())
 }
 
 /// The budget's allowance for `start..=end`: each day's share of its month.
-fn pace_between(budget: &Budget, start: NaiveDate, end: NaiveDate) -> Decimal {
+fn pace_between(budget: &Budget, start: Date, end: Date) -> Decimal {
     start
-        .iter_days()
+        .series(1.day())
         .take_while(|d| *d <= end)
         .map(|d| budget.monthly_amount / Decimal::from(days_in_month(d)))
         .sum()
@@ -579,9 +574,9 @@ fn budget_line(
     ws: &Workspace,
     q: &SeriesQuery,
     currency: &str,
-    from: NaiveDate,
-    starts: &[NaiveDate],
-    ends: &[NaiveDate],
+    from: Date,
+    starts: &[Date],
+    ends: &[Date],
 ) -> Result<Computed> {
     let budget = find_budget(&ws.budgets, q.budget.as_deref().unwrap_or_default())?;
     if budget.currency != currency {
@@ -624,7 +619,7 @@ fn budget_line(
 }
 
 /// The budget's balance accounts (and everything under them) before `from`, in its currency, raw amounts.
-fn budget_opening(ws: &Workspace, budget: &Budget, from: NaiveDate) -> Decimal {
+fn budget_opening(ws: &Workspace, budget: &Budget, from: Date) -> Decimal {
     let by_id: HashMap<&str, &Account> = ws.accounts.iter().map(|a| (a.id.as_str(), a)).collect();
     let by_name: HashMap<&str, &Account> =
         ws.accounts.iter().map(|a| (a.name.as_str(), a)).collect();

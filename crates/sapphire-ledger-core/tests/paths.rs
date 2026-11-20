@@ -1,8 +1,6 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::NaiveDate;
-
 use sapphire_ledger_core::{
     Workspace, account_name_from_relative_path, account_name_segments, account_relative_path,
     assertion_relative_path, init_workspace, load_workspace, transaction_relative_path,
@@ -38,14 +36,14 @@ fn account_name_rejects_empty_and_traversal() {
 
 #[test]
 fn transaction_path_format() {
-    let date = NaiveDate::from_ymd_opt(2026, 5, 21).unwrap();
+    let date = jiff::civil::date(2026, 5, 21);
     let path = transaction_relative_path(date, "0a1b2c3");
     assert_eq!(path, Path::new("transactions/2026/05/0a1b2c3.md"));
 }
 
 #[test]
 fn assertion_path_format() {
-    let date = NaiveDate::from_ymd_opt(2026, 1, 7).unwrap();
+    let date = jiff::civil::date(2026, 1, 7);
     let path = assertion_relative_path(date, "as0001");
     assert_eq!(path, Path::new("assertions/2026/01/as0001.toml"));
 }

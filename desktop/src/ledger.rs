@@ -1032,7 +1032,7 @@ fn first_line(text: &str) -> String {
 }
 
 fn today() -> String {
-    chrono::Local::now().date_naive().to_string()
+    jiff::ZonedDateTime::now().date().to_string()
 }
 
 #[cfg(test)]

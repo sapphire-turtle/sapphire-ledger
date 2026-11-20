@@ -14,7 +14,7 @@ redb-store = ["sapphire-workspace/redb-store"]
 
 [dependencies]
 serde.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 grain-id.workspace = true
 thiserror.workspace = true
 toml.workspace = true

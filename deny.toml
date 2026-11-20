@@ -21,6 +21,7 @@ yanked = "warn"
 # Every ignore needs a `reason`, so the next contributor can tell whether it is
 # still load-bearing. Re-check them when the dependency they name moves.
 ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained. The app's own code uses jiff; chrono remains only through dependencies that require it: rmcp 3 (sapphire-ledger-mcp and sapphire-framework's MCP) and its schemars `chrono04` feature. Drop when rmcp moves off chrono." },
     # Unmaintained, with no vulnerability and no safe upgrade.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained (author-declared); reached through sapphire-framework-gui (desktop) and egui's text stack. The suggested alternative (skrifa) is a different font stack." },
     { id = "RUSTSEC-2026-0370", reason = "zvariant is unmaintained as a standalone crate (merged into zbus 6). Reached via eframe > egui-winit > accesskit_winit > accesskit_unix (Linux screen reader support), whose latest release still pins zbus ^5.19 and atspi ^0.29. Drop when accesskit_unix moves to zbus 6." },

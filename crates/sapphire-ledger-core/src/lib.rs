@@ -20,6 +20,7 @@ pub mod report;
 pub mod repository;
 pub mod series;
 pub mod state;
+pub mod time;
 pub mod transaction;
 pub mod validate;
 pub mod workspace;

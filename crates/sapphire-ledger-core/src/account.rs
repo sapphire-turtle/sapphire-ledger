@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -53,9 +53,9 @@ pub struct Account {
     pub account_type: AccountType,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub currencies: Vec<String>,
-    pub opened_at: NaiveDate,
+    pub opened_at: Date,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub closed_at: Option<NaiveDate>,
+    pub closed_at: Option<Date>,
     /// Tags copied into a transaction that posts to this account, when it is
     /// recorded. Copied, not inherited: changing them leaves past
     /// transactions alone.

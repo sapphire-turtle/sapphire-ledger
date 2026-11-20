@@ -6,7 +6,8 @@
 //! share a domain but not a lifecycle, and one of them is part of the
 //! published MCP tool schema — so they are separate types.
 
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -22,15 +23,17 @@ pub struct Price {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PriceEntry {
     pub id: String,
-    pub date: NaiveDate,
+    pub date: Date,
     pub base: String,
     pub quote: String,
     #[serde(with = "rust_decimal::serde::str")]
     pub rate: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    pub created_at: DateTime<FixedOffset>,
-    pub updated_at: DateTime<FixedOffset>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub created_at: Timestamp,
+    #[serde(with = "crate::time::rfc3339")]
+    pub updated_at: Timestamp,
 }
 
 #[cfg(test)]

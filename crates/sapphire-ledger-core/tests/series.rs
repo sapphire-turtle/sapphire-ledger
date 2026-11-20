@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use sapphire_ledger_core::series::{
     BudgetLine, GroupBy, Interval, Measure, SeriesQuery, SeriesRequest, buckets, check_query,
@@ -6,7 +6,7 @@ use sapphire_ledger_core::series::{
 };
 use sapphire_ledger_core::{AccountRef, AccountType, Posting, Workspace, load_workspace, ops};
 
-fn d(s: &str) -> NaiveDate {
+fn d(s: &str) -> Date {
     s.parse().unwrap()
 }
 

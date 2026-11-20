@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use anyhow::{Context as _, bail};
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use sapphire_ledger_core::{AccountType, Balance, TransactionStatus, ops};
 
 use crate::cli::{AccountCommand, AssertionCommand, PanelCommand, PriceCommand, TxCommand};
@@ -167,7 +167,7 @@ fn list(
         }
     });
 
-    let mut rows: Vec<(NaiveDate, String, String, String, String)> = Vec::new();
+    let mut rows: Vec<(Date, String, String, String, String)> = Vec::new();
     for tx in &workspace.transactions {
         if from.is_some_and(|f| tx.date < f) || to.is_some_and(|t| tx.date > t) {
             continue;
@@ -221,11 +221,11 @@ fn shown(path: &Path) -> String {
     }
 }
 
-fn today() -> NaiveDate {
-    chrono::Local::now().date_naive()
+fn today() -> Date {
+    jiff::ZonedDateTime::now().date()
 }
 
-fn parse_date(raw: &str) -> anyhow::Result<NaiveDate> {
+fn parse_date(raw: &str) -> anyhow::Result<Date> {
     raw.parse()
         .with_context(|| format!("not a YYYY-MM-DD date: {raw:?}"))
 }

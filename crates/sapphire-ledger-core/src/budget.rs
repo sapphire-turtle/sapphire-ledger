@@ -1,7 +1,7 @@
 //! A monthly budget: the transactions carrying `tag`, against
 //! `monthly_amount` in `currency`, with the accounts it is paid from.
 
-use chrono::{DateTime, FixedOffset};
+use jiff::Timestamp;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -24,8 +24,10 @@ pub struct Budget {
     pub currency: String,
     #[serde(with = "rust_decimal::serde::str")]
     pub monthly_amount: Decimal,
-    pub created_at: DateTime<FixedOffset>,
-    pub updated_at: DateTime<FixedOffset>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub created_at: Timestamp,
+    #[serde(with = "crate::time::rfc3339")]
+    pub updated_at: Timestamp,
     /// What the budget is paid from, summed for the balance view. Last, so
     /// TOML writes it as `[[balance_accounts]]` after the plain keys.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

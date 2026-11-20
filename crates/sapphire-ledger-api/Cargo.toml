@@ -14,7 +14,7 @@ keywords = ["accounting", "ledger", "ipc", "protocol", "double-entry"]
 # The framework's methods every app server serves (`workspace.*`, `sync.*`),
 # re-exported as `server`: a client finds all it can ask the ledger's server here.
 sapphire-server-api.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 rust_decimal.workspace = true
 schemars.workspace = true
 serde.workspace = true

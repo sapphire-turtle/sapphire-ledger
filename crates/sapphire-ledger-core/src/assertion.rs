@@ -1,4 +1,5 @@
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -22,8 +23,10 @@ pub struct Assertion {
     /// go stale after a rename.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_name: Option<String>,
-    pub date: NaiveDate,
+    pub date: Date,
     pub balances: Vec<Balance>,
-    pub created_at: DateTime<FixedOffset>,
-    pub updated_at: DateTime<FixedOffset>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub created_at: Timestamp,
+    #[serde(with = "crate::time::rfc3339")]
+    pub updated_at: Timestamp,
 }

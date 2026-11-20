@@ -114,7 +114,7 @@ impl TxForm {
     /// The parameters `add_transaction` takes, or why the form is not ready.
     pub fn to_params(&self) -> Result<AddTransactionParams, String> {
         let date = require(&self.date, "date")?;
-        date.parse::<chrono::NaiveDate>()
+        date.parse::<jiff::civil::Date>()
             .map_err(|_| format!("not a YYYY-MM-DD date: {date}"))?;
         let narration = require(&self.narration, "narration")?;
         if self.postings.len() < 2 {
@@ -210,7 +210,7 @@ impl AccountForm {
         let name = require(&self.name, "name")?;
         let opened_at = require(&self.opened_at, "opening date")?;
         opened_at
-            .parse::<chrono::NaiveDate>()
+            .parse::<jiff::civil::Date>()
             .map_err(|_| format!("not a YYYY-MM-DD date: {opened_at}"))?;
         Ok(AddAccountParams {
             default_tags: split_list(&self.default_tags),
