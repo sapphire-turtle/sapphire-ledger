@@ -9,10 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.0.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-api-v3.0.0...sapphire-ledger-api-v4.0.0) - 2026-11-20
 
-### Other
-
-- [**breaking**] dates and timestamps are jiff's, not chrono's (RUSTSEC-2026-0543)
-
 ### Breaking
 
 - `created_at` and `updated_at` are `jiff::Timestamp`, not chrono's `DateTime<FixedOffset>`, and dates are `jiff::civil::Date`: chrono is unmaintained (RUSTSEC-2026-0543). The JSON is unchanged: RFC 3339 in the server's offset, and `YYYY-MM-DD`. `time` has the helpers.

@@ -9,10 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-core-v0.3.3...sapphire-ledger-core-v0.4.0) - 2026-11-20
 
-### Other
-
-- [**breaking**] dates and timestamps are jiff's, not chrono's (RUSTSEC-2026-0543)
-
 ### Breaking
 
 - Dates are `jiff::civil::Date` and `created_at` / `updated_at` `jiff::Timestamp`, not chrono's: chrono is unmaintained (RUSTSEC-2026-0543).
