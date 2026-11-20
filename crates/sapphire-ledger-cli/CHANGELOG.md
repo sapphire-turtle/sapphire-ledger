@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-cli-v0.4.0...sapphire-ledger-cli-v0.5.0) - 2026-11-20
+
+### Other
+
+- [**breaking**] dates and timestamps are jiff's, not chrono's (RUSTSEC-2026-0543)
+
 ## [0.4.0](https://github.com/sapphire-turtle/sapphire-ledger/compare/sapphire-ledger-cli-v0.3.1...sapphire-ledger-cli-v0.4.0) - 2026-11-06
 
 ### Changed
